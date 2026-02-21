@@ -7,11 +7,12 @@ final class MenuBarController {
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.menu = Self.makeMenu(stateMenuItem: stateMenuItem, target: self)
-        statusItem.button?.title = Self.statusTitle
+        setRecordingActive(false)
         setState("Ready")
     }
 
     static let statusTitle = "🫡"
+    static let indicator = "●"
 
     static func makeMenu(stateMenuItem: NSMenuItem, target: AnyObject) -> NSMenu {
         let menu = NSMenu()
@@ -27,6 +28,23 @@ final class MenuBarController {
     func setState(_ message: String) {
         stateMenuItem.title = "Status: \(message)"
         TraceLogger.log("menu state updated: \(message)")
+    }
+
+    func setRecordingActive(_ isRecording: Bool) {
+        statusItem.button?.attributedTitle = Self.makeStatusTitle(isRecording: isRecording)
+        TraceLogger.log("menu recording indicator updated (isRecording=\(isRecording))")
+    }
+
+    static func makeStatusTitle(isRecording: Bool) -> NSAttributedString {
+        let text = "\(statusTitle) \(indicator)"
+        let attributed = NSMutableAttributedString(string: text)
+        let indicatorRange = NSRange(location: text.count - 1, length: 1)
+        attributed.addAttribute(
+            .foregroundColor,
+            value: isRecording ? NSColor.systemRed : NSColor.labelColor,
+            range: indicatorRange
+        )
+        return attributed
     }
 
     @objc

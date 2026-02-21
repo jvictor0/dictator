@@ -3,10 +3,13 @@ import ApplicationServices
 
 final class CapsLockTriggerController {
     static let capsLockKeyCode: UInt16 = 57
+    static let duplicateTriggerInterval: TimeInterval = 0.12
 
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private let onTrigger: () -> Void
+    private let stateLock = NSLock()
+    private var lastTriggerTimestamp: TimeInterval?
 
     init(onTrigger: @escaping () -> Void) {
         self.onTrigger = onTrigger
@@ -58,13 +61,44 @@ final class CapsLockTriggerController {
         TraceLogger.log(
             "caps-event source=\(source) type=\(event.type.rawValue) keyCode=\(event.keyCode) modifierFlags=\(event.modifierFlags.rawValue)"
         )
-        if Self.shouldTrigger(eventType: event.type, keyCode: event.keyCode) {
+        if Self.shouldTrigger(eventType: event.type, keyCode: event.keyCode),
+           shouldAcceptTrigger(eventTimestamp: event.timestamp) {
             TraceLogger.log("caps-trigger fired (source=\(source))")
             onTrigger()
         }
     }
 
+    func shouldAcceptTrigger(eventTimestamp: TimeInterval) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        let shouldAccept = Self.shouldAcceptTrigger(
+            lastTimestamp: lastTriggerTimestamp,
+            newTimestamp: eventTimestamp,
+            minimumInterval: Self.duplicateTriggerInterval
+        )
+        if shouldAccept {
+            lastTriggerTimestamp = eventTimestamp
+        } else {
+            TraceLogger.log(
+                "caps-trigger ignored as duplicate (eventTimestamp=\(eventTimestamp), last=\(String(describing: lastTriggerTimestamp)))"
+            )
+        }
+        return shouldAccept
+    }
+
     static func shouldTrigger(eventType: NSEvent.EventType, keyCode: UInt16) -> Bool {
         eventType == .flagsChanged && keyCode == capsLockKeyCode
+    }
+
+    static func shouldAcceptTrigger(
+        lastTimestamp: TimeInterval?,
+        newTimestamp: TimeInterval,
+        minimumInterval: TimeInterval
+    ) -> Bool {
+        guard let lastTimestamp else {
+            return true
+        }
+        return (newTimestamp - lastTimestamp) > minimumInterval
     }
 }

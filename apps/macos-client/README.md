@@ -2,11 +2,13 @@
 
 Swift menubar scaffold for Dictator.
 
-## Current slice behavior (Slice 2)
+## Current slice behavior (Slice 3)
 
 - Menubar status item titled `🫡`
-- Pressing Caps Lock triggers insertion of `hello world` at current cursor target
-- Insertion path uses clipboard + synthetic `Cmd+V` paste fallback
+- Pressing Caps Lock toggles recording state
+- Recording `on` shows active-color indicator in menubar title
+- Recording `off` inserts `hello world` at current cursor target
+- Insertion path uses clipboard + synthetic `Cmd+V` and restores prior clipboard contents
 - Menubar status line reports explicit failure (for example missing accessibility permission)
 - Menubar menu includes `Quit`
 

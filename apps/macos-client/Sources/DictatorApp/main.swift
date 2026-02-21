@@ -3,6 +3,7 @@ import AppKit
 final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController?
     private var capsLockTriggerController: CapsLockTriggerController?
+    private let recordingController = RecordingController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         TraceLogger.reset()
@@ -12,21 +13,32 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         let menuBarController = MenuBarController()
         self.menuBarController = menuBarController
 
-        let triggerController = CapsLockTriggerController { [weak menuBarController] in
+        let triggerController = CapsLockTriggerController { [weak menuBarController, weak self] in
+            guard let self else {
+                return
+            }
             TraceLogger.log("caps-trigger callback started")
-            let result = ClipboardInserter.insert("hello world")
-            switch result {
-            case .success:
-                menuBarController?.setState("Inserted hello world")
-            case let .failure(error):
-                TraceLogger.log("caps-trigger callback insert failed: \(error)")
-                menuBarController?.setState("Failed: \(Self.failureMessage(for: error))")
+            let isRecording = self.recordingController.toggle()
+            menuBarController?.setRecordingActive(isRecording)
+            TraceLogger.log("recording state toggled (isRecording=\(isRecording))")
+
+            if isRecording {
+                menuBarController?.setState("Recording")
+            } else {
+                let result = ClipboardInserter.insert("hello world")
+                switch result {
+                case .success:
+                    menuBarController?.setState("Inserted hello world")
+                case let .failure(error):
+                    TraceLogger.log("caps-trigger callback insert failed: \(error)")
+                    menuBarController?.setState("Failed: \(Self.failureMessage(for: error))")
+                }
             }
         }
 
         self.capsLockTriggerController = triggerController
         if triggerController.start() {
-            menuBarController.setState("Ready (Caps Lock trigger armed)")
+            menuBarController.setState("Ready (Caps Lock toggles recording)")
             TraceLogger.log("app ready: caps lock trigger armed")
         } else {
             menuBarController.setState("Failed: Accessibility permission missing")

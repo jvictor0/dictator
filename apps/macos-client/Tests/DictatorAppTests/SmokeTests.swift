@@ -7,6 +7,11 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(MenuBarController.statusTitle, "🫡")
     }
 
+    func testStatusTitleIncludesIndicator() {
+        XCTAssertEqual(MenuBarController.makeStatusTitle(isRecording: false).string, "🫡 ●")
+        XCTAssertEqual(MenuBarController.makeStatusTitle(isRecording: true).string, "🫡 ●")
+    }
+
     func testMenuIncludesQuitAction() {
         let target = NSObject()
         let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -21,6 +26,39 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(CapsLockTriggerController.shouldTrigger(eventType: .flagsChanged, keyCode: 57))
         XCTAssertFalse(CapsLockTriggerController.shouldTrigger(eventType: .keyDown, keyCode: 57))
         XCTAssertFalse(CapsLockTriggerController.shouldTrigger(eventType: .flagsChanged, keyCode: 0))
+    }
+
+    func testCapsLockTriggerDeduplicatesRapidDuplicateEvents() {
+        XCTAssertTrue(
+            CapsLockTriggerController.shouldAcceptTrigger(
+                lastTimestamp: nil,
+                newTimestamp: 100.0,
+                minimumInterval: 0.12
+            )
+        )
+        XCTAssertFalse(
+            CapsLockTriggerController.shouldAcceptTrigger(
+                lastTimestamp: 100.0,
+                newTimestamp: 100.05,
+                minimumInterval: 0.12
+            )
+        )
+        XCTAssertTrue(
+            CapsLockTriggerController.shouldAcceptTrigger(
+                lastTimestamp: 100.0,
+                newTimestamp: 100.25,
+                minimumInterval: 0.12
+            )
+        )
+    }
+
+    func testRecordingToggleFlipsState() {
+        let controller = RecordingController()
+        XCTAssertFalse(controller.isRecording)
+        XCTAssertTrue(controller.toggle())
+        XCTAssertTrue(controller.isRecording)
+        XCTAssertFalse(controller.toggle())
+        XCTAssertFalse(controller.isRecording)
     }
 
     func testClipboardSnapshotRestoreRoundTrip() {
