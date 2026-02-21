@@ -3,8 +3,8 @@ import XCTest
 @testable import DictatorApp
 
 final class SmokeTests: XCTestCase {
-    func testStatusTitleIsDictator() {
-        XCTAssertEqual(MenuBarController.statusTitle, "Dictator")
+    func testStatusTitleIsSaluteEmoji() {
+        XCTAssertEqual(MenuBarController.statusTitle, "🫡")
     }
 
     func testMenuIncludesQuitAction() {

@@ -9,7 +9,7 @@ final class MenuBarController {
         statusItem.button?.title = Self.statusTitle
     }
 
-    static let statusTitle = "Dictator"
+    static let statusTitle = "🫡"
 
     static func makeMenu(target: AnyObject) -> NSMenu {
         let menu = NSMenu()
