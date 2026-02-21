@@ -45,3 +45,14 @@ def test_whisper_provider_rejects_invalid_base64() -> None:
 
     with pytest.raises(ValueError, match="valid base64"):
         provider.transcribe(req)
+
+
+def test_whisper_provider_normalizes_underscore_locale() -> None:
+    provider = WhisperLocalProvider(default_language="en", transcribe_fn=lambda *_args, **_kwargs: {})
+    req = TranscribeRequest(
+        audio_b64=base64.b64encode(b"fake-audio").decode("utf-8"),
+        sample_rate=16000,
+        locale="en_US",
+        session_id="s1",
+    )
+    assert provider._language_for_request(req) == "en"

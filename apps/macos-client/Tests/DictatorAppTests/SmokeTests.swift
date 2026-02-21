@@ -61,6 +61,30 @@ final class SmokeTests: XCTestCase {
         XCTAssertFalse(controller.isRecording)
     }
 
+    func testBackendManagerPythonVersionSupport() {
+        XCTAssertTrue(BackendServiceManager.isSupportedPythonVersionString("3.9"))
+        XCTAssertTrue(BackendServiceManager.isSupportedPythonVersionString("3.11"))
+        XCTAssertFalse(BackendServiceManager.isSupportedPythonVersionString("3.8"))
+        XCTAssertFalse(BackendServiceManager.isSupportedPythonVersionString("not-a-version"))
+    }
+
+    func testBackendManagerCachedFailureWindow() {
+        XCTAssertTrue(
+            BackendServiceManager.shouldUseCachedInstallFailure(
+                now: 1000,
+                stamp: 950,
+                retryInterval: 60
+            )
+        )
+        XCTAssertFalse(
+            BackendServiceManager.shouldUseCachedInstallFailure(
+                now: 1000,
+                stamp: 500,
+                retryInterval: 60
+            )
+        )
+    }
+
     func testClipboardSnapshotRestoreRoundTrip() {
         let name = NSPasteboard.Name("dictator.test.clipboard.\(UUID().uuidString)")
         let pasteboard = NSPasteboard(name: name)

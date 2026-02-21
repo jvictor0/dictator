@@ -16,6 +16,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 - STT provider `whisper_local` now uses `openai-whisper` locally.
 - Ensure `ffmpeg` is available on PATH for audio decoding.
 - First run may download the configured model (`WHISPER_MODEL`, default `tiny`).
+- Internal lifecycle endpoint: `POST /exit` (used by mac wrapper for graceful shutdown).
 
 ## Test
 

@@ -38,7 +38,8 @@ class WhisperLocalProvider(STTProvider):
         return model.transcribe
 
     def _language_for_request(self, req: TranscribeRequest) -> str:
-        locale_prefix = req.locale.split("-")[0].lower().strip()
+        normalized = req.locale.replace("_", "-")
+        locale_prefix = normalized.split("-")[0].lower().strip()
         if locale_prefix:
             return locale_prefix
         return self.default_language

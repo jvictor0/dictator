@@ -16,8 +16,10 @@ Swift menubar scaffold for Dictator.
 
 ## Backend notes
 
-- Backend URL is managed internally as `http://127.0.0.1:8000`.
+- Backend URL is managed internally as `http://127.0.0.1:8780` by default.
 - On first run (or missing deps), app attempts to prepare backend `.venv` and install orchestrator dependencies automatically.
+- Optional overrides: `DICTATOR_BACKEND_HOST`, `DICTATOR_BACKEND_PORT`.
+- App uses backend `POST /exit` for graceful shutdown on app quit and to clear stale backend instances on startup.
 
 ## Included wiring points for future slices
 

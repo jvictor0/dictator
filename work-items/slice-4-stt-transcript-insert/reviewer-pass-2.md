@@ -5,6 +5,7 @@
 
 ## Verification focus
 - Confirmed wrapper app now owns backend startup/health-check path.
+- Confirmed repeated long reinstall loops are mitigated via dependency checks + failure-cache cooldown.
 - Confirmed explicit backend failure signaling persists without silent degradation.
 - Confirmed app lifecycle stop hook for managed backend process.
 

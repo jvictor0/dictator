@@ -9,6 +9,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var apiClient: APIClient?
     private let sessionID = UUID().uuidString
     private var isHandlingTrigger = false
+    private var isBackendStarting = false
 
     override init() {
         super.init()
@@ -36,7 +37,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             menuBarController.setState("Starting backend...")
             TraceLogger.log("app ready: caps lock trigger armed")
             Task { @MainActor in
+                self.isBackendStarting = true
                 await self.startManagedBackend(menuBarController: menuBarController)
+                self.isBackendStarting = false
             }
         } else {
             menuBarController.setState("Failed: Accessibility permission missing")
@@ -62,8 +65,13 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         TraceLogger.log("caps-trigger callback started")
 
         if !recordingController.isRecording && apiClient == nil {
-            menuBarController?.setState("Failed: Backend unavailable")
-            TraceLogger.log("caps-trigger rejected: backend unavailable")
+            if isBackendStarting {
+                menuBarController?.setState("Backend starting...")
+                TraceLogger.log("caps-trigger rejected: backend still starting")
+            } else {
+                menuBarController?.setState("Failed: Backend unavailable")
+                TraceLogger.log("caps-trigger rejected: backend unavailable")
+            }
             return
         }
 
@@ -107,7 +115,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             menuBarController?.setState("Transcribing...")
 
             do {
-                let locale = Locale.current.identifier
+                let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
                 guard let apiClient else {
                     menuBarController?.setState("Failed: Backend unavailable")
                     TraceLogger.log("transcribe skipped: api client unavailable")
@@ -194,12 +202,16 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         switch error {
         case .repoRootNotFound:
             return "Backend path not found"
-        case .bootstrapFailed:
-            return "Backend setup failed"
+        case .pythonNotFound:
+            return "Python 3.9+ not found"
+        case let .bootstrapFailed(reason):
+            return "Backend setup failed: \(String(reason.prefix(90)))"
         case .launchFailed:
             return "Backend launch failed"
         case .healthTimeout:
             return "Backend health timeout"
+        case .exitFailed:
+            return "Backend did not exit cleanly"
         }
     }
 }

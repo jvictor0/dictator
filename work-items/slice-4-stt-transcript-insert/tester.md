@@ -9,6 +9,7 @@
 2. Pass-1 issue and pass-2 re-validation
 - Reported issue: app required manually starting backend service.
 - Pass-2 fix: app-managed backend lifecycle (setup/start/health-check/stop).
+- Additional hardening: avoids repeated long reinstall attempts when dependency install previously failed.
 - Re-validation expectation on launch:
   - status transitions to `Starting backend...`
   - then `Ready (Caps Lock toggles recording)` when backend is healthy
@@ -22,8 +23,9 @@
 - Press Caps Lock again -> `🫡 ⚪`, status `Transcribing...`, transcript inserted.
 
 4. Failure-mode validation
-- If backend setup fails (Python/pip/dependency issue), expect explicit status `Failed: Backend ...`.
+- If backend setup fails (Python/pip/dependency/network issue), expect explicit status `Failed: Backend setup failed: ...`.
 - On failed backend, pressing Caps Lock should not silently proceed; expect explicit `Failed: Backend unavailable`.
+- Relaunch shortly after failure should fail fast (no long reinstall loop) while within cooldown window.
 
 ## Pass/fail status
 - Pass for build/test gates.
@@ -31,4 +33,4 @@
 
 ## Release confidence and caveats
 - Confidence: High for app-side orchestration logic and failure visibility.
-- Caveat: first-run dependency installation still depends on host Python/pip environment.
+- Caveat: first-run dependency installation still depends on host Python/pip and network/package availability.
