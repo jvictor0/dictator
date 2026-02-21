@@ -23,6 +23,20 @@ final class SmokeTests: XCTestCase {
         XCTAssertFalse(CapsLockTriggerController.shouldTrigger(eventType: .flagsChanged, keyCode: 0))
     }
 
+    func testClipboardSnapshotRestoreRoundTrip() {
+        let name = NSPasteboard.Name("dictator.test.clipboard.\(UUID().uuidString)")
+        let pasteboard = NSPasteboard(name: name)
+
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("original", forType: .string))
+        let snap = ClipboardInserter.snapshot(pasteboard)
+
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("temporary", forType: .string))
+        XCTAssertTrue(ClipboardInserter.restore(snap, to: pasteboard))
+        XCTAssertEqual(pasteboard.string(forType: .string), "original")
+    }
+
     func testDecodeDictateResponseShape() throws {
         let json = """
         {

@@ -17,37 +17,49 @@ final class CapsLockTriggerController {
     }
 
     func start() -> Bool {
-        guard AXIsProcessTrustedWithOptions([
+        let isTrusted = AXIsProcessTrustedWithOptions([
             kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true
-        ] as CFDictionary) else {
+        ] as CFDictionary)
+        TraceLogger.log("caps-trigger start requested (axTrusted=\(isTrusted))")
+
+        guard isTrusted else {
+            TraceLogger.log("caps-trigger start failed: accessibility permission missing")
             return false
         }
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event)
+            self?.handle(event, source: "global")
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event)
+            self?.handle(event, source: "local")
             return event
         }
 
-        return globalMonitor != nil || localMonitor != nil
+        let started = globalMonitor != nil || localMonitor != nil
+        TraceLogger.log("caps-trigger monitors armed (global=\(globalMonitor != nil), local=\(localMonitor != nil), started=\(started))")
+        return started
     }
 
     func stop() {
         if let globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
             self.globalMonitor = nil
+            TraceLogger.log("caps-trigger global monitor removed")
         }
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
+            TraceLogger.log("caps-trigger local monitor removed")
         }
     }
 
-    func handle(_ event: NSEvent) {
+    func handle(_ event: NSEvent, source: String) {
+        TraceLogger.log(
+            "caps-event source=\(source) type=\(event.type.rawValue) keyCode=\(event.keyCode) modifierFlags=\(event.modifierFlags.rawValue)"
+        )
         if Self.shouldTrigger(eventType: event.type, keyCode: event.keyCode) {
+            TraceLogger.log("caps-trigger fired (source=\(source))")
             onTrigger()
         }
     }

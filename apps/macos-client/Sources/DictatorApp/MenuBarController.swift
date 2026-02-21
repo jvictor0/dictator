@@ -26,6 +26,7 @@ final class MenuBarController {
 
     func setState(_ message: String) {
         stateMenuItem.title = "Status: \(message)"
+        TraceLogger.log("menu state updated: \(message)")
     }
 
     @objc
