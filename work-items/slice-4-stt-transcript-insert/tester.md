@@ -6,22 +6,29 @@
 - Location: `/Users/joyo/dictator/apps/macos-client`
 - Result: Pass (`swift test` 9 tests, 0 failures)
 
-2. Manual end-to-end transcript insertion
-- Prereq: run orchestrator with `/v1/transcribe` available.
-- Start app, focus a text box (for example TextEdit).
-- Press Caps Lock once -> expected recording state on (`🫡 🔴`, status `Recording`).
-- Speak short phrase.
-- Press Caps Lock again -> expected recording state off (`🫡 ⚪`), then status `Transcribing...`, then transcript inserted.
+2. Pass-1 issue and pass-2 re-validation
+- Reported issue: app required manually starting backend service.
+- Pass-2 fix: app-managed backend lifecycle (setup/start/health-check/stop).
+- Re-validation expectation on launch:
+  - status transitions to `Starting backend...`
+  - then `Ready (Caps Lock toggles recording)` when backend is healthy
+  - no manual backend command required.
 
-3. Failure-mode validation
-- Stop backend or set invalid `DICTATOR_API_BASE_URL`.
-- Repeat start/stop flow.
-- Expected: explicit status `Failed: STT request failed...` and no silent insertion.
+3. Manual end-to-end transcript insertion
+- Start app only (do not manually start backend).
+- Focus text box (for example TextEdit).
+- Press Caps Lock once -> `🫡 🔴`, status `Recording`.
+- Speak short phrase.
+- Press Caps Lock again -> `🫡 ⚪`, status `Transcribing...`, transcript inserted.
+
+4. Failure-mode validation
+- If backend setup fails (Python/pip/dependency issue), expect explicit status `Failed: Backend ...`.
+- On failed backend, pressing Caps Lock should not silently proceed; expect explicit `Failed: Backend unavailable`.
 
 ## Pass/fail status
 - Pass for build/test gates.
-- Manual end-to-end confirmation required on local desktop with running orchestrator.
+- Manual desktop sign-off required for full wrapper-managed startup and transcript insertion confirmation.
 
 ## Release confidence and caveats
-- Confidence: Medium-high for wired flow and error handling.
-- Caveat: final acceptance depends on real local STT path and desktop permissions.
+- Confidence: High for app-side orchestration logic and failure visibility.
+- Caveat: first-run dependency installation still depends on host Python/pip environment.

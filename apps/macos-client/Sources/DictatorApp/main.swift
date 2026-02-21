@@ -5,13 +5,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var capsLockTriggerController: CapsLockTriggerController?
     private let recordingController = RecordingController()
     private let audioRecorder = AudioRecorder()
-    private let apiClient: APIClient
+    private let backendManager = BackendServiceManager()
+    private var apiClient: APIClient?
     private let sessionID = UUID().uuidString
     private var isHandlingTrigger = false
 
     override init() {
-        let baseURL = URL(string: ProcessInfo.processInfo.environment["DICTATOR_API_BASE_URL"] ?? "http://127.0.0.1:8000")!
-        self.apiClient = APIClient(baseURL: baseURL)
         super.init()
     }
 
@@ -19,7 +18,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         TraceLogger.reset()
         TraceLogger.log("app did finish launching")
         TraceLogger.log("trace file: \(TraceLogger.path)")
-        TraceLogger.log("api base url: \(apiClient.baseURLDescription)")
 
         let menuBarController = MenuBarController()
         self.menuBarController = menuBarController
@@ -35,12 +33,19 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         self.capsLockTriggerController = triggerController
         if triggerController.start() {
-            menuBarController.setState("Ready (Caps Lock toggles recording)")
+            menuBarController.setState("Starting backend...")
             TraceLogger.log("app ready: caps lock trigger armed")
+            Task { @MainActor in
+                await self.startManagedBackend(menuBarController: menuBarController)
+            }
         } else {
             menuBarController.setState("Failed: Accessibility permission missing")
             TraceLogger.log("app startup failed: caps lock trigger not armed")
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        backendManager.stop()
     }
 
     @MainActor
@@ -55,6 +60,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         defer { isHandlingTrigger = false }
 
         TraceLogger.log("caps-trigger callback started")
+
+        if !recordingController.isRecording && apiClient == nil {
+            menuBarController?.setState("Failed: Backend unavailable")
+            TraceLogger.log("caps-trigger rejected: backend unavailable")
+            return
+        }
 
         if recordingController.isRecording {
             await stopRecordingAndTranscribe(menuBarController: menuBarController)
@@ -97,6 +108,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
             do {
                 let locale = Locale.current.identifier
+                guard let apiClient else {
+                    menuBarController?.setState("Failed: Backend unavailable")
+                    TraceLogger.log("transcribe skipped: api client unavailable")
+                    return
+                }
                 let transcript = try await apiClient.transcribe(
                     TranscribeRequest(
                         audio_b64: capturedAudio.data.base64EncodedString(),
@@ -157,6 +173,34 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         return "STT request failed"
+    }
+
+    @MainActor
+    private func startManagedBackend(menuBarController: MenuBarController) async {
+        let result = await backendManager.start()
+        switch result {
+        case let .success(baseURL):
+            apiClient = APIClient(baseURL: baseURL)
+            TraceLogger.log("backend manager connected: \(baseURL.absoluteString)")
+            menuBarController.setState("Ready (Caps Lock toggles recording)")
+        case let .failure(error):
+            apiClient = nil
+            TraceLogger.log("backend manager failed: \(error)")
+            menuBarController.setState("Failed: \(Self.backendFailureMessage(for: error))")
+        }
+    }
+
+    private static func backendFailureMessage(for error: BackendServiceManager.BackendError) -> String {
+        switch error {
+        case .repoRootNotFound:
+            return "Backend path not found"
+        case .bootstrapFailed:
+            return "Backend setup failed"
+        case .launchFailed:
+            return "Backend launch failed"
+        case .healthTimeout:
+            return "Backend health timeout"
+        }
     }
 }
 

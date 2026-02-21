@@ -5,6 +5,7 @@ Swift menubar scaffold for Dictator.
 ## Current slice behavior (Slice 4)
 
 - Menubar status item titled `🫡`
+- App-managed backend lifecycle: starts orchestrator automatically on launch and stops managed process on app quit
 - Pressing Caps Lock toggles recording state
 - Recording `on` shows `🔴` indicator in menubar title (`🫡 🔴`)
 - Recording `off` shows `⚪` indicator in menubar title (`🫡 ⚪`)
@@ -13,9 +14,10 @@ Swift menubar scaffold for Dictator.
 - Menubar status line reports explicit failures (permission missing, STT failure, insertion failure)
 - Menubar menu includes `Quit`
 
-## Runtime config
+## Backend notes
 
-- `DICTATOR_API_BASE_URL` (optional): defaults to `http://127.0.0.1:8000`
+- Backend URL is managed internally as `http://127.0.0.1:8000`.
+- On first run (or missing deps), app attempts to prepare backend `.venv` and install orchestrator dependencies automatically.
 
 ## Included wiring points for future slices
 
