@@ -88,4 +88,21 @@ final class SmokeTests: XCTestCase {
         let decoded = try APIClient.decodeDictateResponse(from: json)
         XCTAssertEqual(decoded.revised_text, "Hello world.")
     }
+
+    func testDecodeTranscribeResponseShape() throws {
+        let json = """
+        {
+          "raw_transcript": "hello world",
+          "segments": [
+            { "start_ms": 0, "end_ms": 1000, "text": "hello world" }
+          ],
+          "confidence": 0.8,
+          "duration_ms": 1000
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try APIClient.decodeTranscribeResponse(from: json)
+        XCTAssertEqual(decoded.raw_transcript, "hello world")
+        XCTAssertEqual(decoded.segments.count, 1)
+    }
 }

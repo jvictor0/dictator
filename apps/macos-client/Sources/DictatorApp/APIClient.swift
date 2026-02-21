@@ -1,5 +1,32 @@
 import Foundation
 
+public struct TranscribeRequest: Codable {
+    public let audio_b64: String
+    public let sample_rate: Int
+    public let locale: String
+    public let session_id: String
+
+    public init(audio_b64: String, sample_rate: Int, locale: String, session_id: String) {
+        self.audio_b64 = audio_b64
+        self.sample_rate = sample_rate
+        self.locale = locale
+        self.session_id = session_id
+    }
+}
+
+public struct TranscribeSegment: Codable {
+    public let start_ms: Int
+    public let end_ms: Int
+    public let text: String
+}
+
+public struct TranscribeResponse: Codable {
+    public let raw_transcript: String
+    public let segments: [TranscribeSegment]
+    public let confidence: Double
+    public let duration_ms: Int
+}
+
 public struct DictateRequest: Codable {
     public let audio_b64: String
     public let sample_rate: Int
@@ -34,6 +61,7 @@ public struct DictateResponse: Codable {
 
 public enum APIClientError: Error {
     case badStatus(Int)
+    case emptyTranscript
 }
 
 public final class APIClient {
@@ -43,6 +71,10 @@ public final class APIClient {
     public init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
+    }
+
+    public var baseURLDescription: String {
+        baseURL.absoluteString
     }
 
     public func dictate(_ payload: DictateRequest) async throws -> DictateResponse {
@@ -61,7 +93,32 @@ public final class APIClient {
         return try JSONDecoder().decode(DictateResponse.self, from: data)
     }
 
+    public func transcribe(_ payload: TranscribeRequest) async throws -> TranscribeResponse {
+        var request = URLRequest(url: baseURL.appending(path: "/v1/transcribe"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw APIClientError.badStatus(http.statusCode)
+        }
+
+        let decoded = try JSONDecoder().decode(TranscribeResponse.self, from: data)
+        if decoded.raw_transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw APIClientError.emptyTranscript
+        }
+        return decoded
+    }
+
     public static func decodeDictateResponse(from data: Data) throws -> DictateResponse {
         try JSONDecoder().decode(DictateResponse.self, from: data)
+    }
+
+    public static func decodeTranscribeResponse(from data: Data) throws -> TranscribeResponse {
+        try JSONDecoder().decode(TranscribeResponse.self, from: data)
     }
 }
