@@ -12,6 +12,7 @@ from app.services.llm.openai_refiner import OpenAIRefiner
 from app.services.stt.base import STTProvider
 from app.services.stt.whisper_local import WhisperLocalProvider
 from typing import Optional
+import time
 
 
 class DictationPipeline:
@@ -33,6 +34,11 @@ class DictationPipeline:
         return self.llm.refine(req)
 
     def dictate(self, req: DictateRequest) -> DictateResponse:
+        out, _, _ = self.dictate_with_metrics(req)
+        return out
+
+    def dictate_with_metrics(self, req: DictateRequest) -> tuple[DictateResponse, int, int]:
+        transcribe_started = time.perf_counter()
         t = self.transcribe(
             TranscribeRequest(
                 audio_b64=req.audio_b64,
@@ -41,6 +47,8 @@ class DictationPipeline:
                 session_id=req.session_id,
             )
         )
+        transcribe_ms = int((time.perf_counter() - transcribe_started) * 1000)
+        refine_started = time.perf_counter()
         try:
             r = self.refine(
                 RefineRequest(
@@ -49,18 +57,28 @@ class DictationPipeline:
                     style_prefs=req.style_prefs,
                 )
             )
+            refine_ms = int((time.perf_counter() - refine_started) * 1000)
         except Exception as exc:
+            refine_ms = int((time.perf_counter() - refine_started) * 1000)
             if settings.refinement_fallback_mode == "use_raw":
-                return DictateResponse(
-                    raw_transcript=t.raw_transcript,
-                    revised_text=t.raw_transcript,
-                    edit_summary=f"Refinement failed, used raw transcript: {str(exc)[:160]}",
-                    uncertainty_flags=["refinement_failed_used_raw"],
+                return (
+                    DictateResponse(
+                        raw_transcript=t.raw_transcript,
+                        revised_text=t.raw_transcript,
+                        edit_summary=f"Refinement failed, used raw transcript: {str(exc)[:160]}",
+                        uncertainty_flags=["refinement_failed_used_raw"],
+                    ),
+                    transcribe_ms,
+                    refine_ms,
                 )
             raise RuntimeError(f"Refinement failed and fallback mode is fail_closed: {exc}") from exc
-        return DictateResponse(
-            raw_transcript=t.raw_transcript,
-            revised_text=r.revised_text,
-            edit_summary=r.edit_summary,
-            uncertainty_flags=r.uncertainty_flags,
+        return (
+            DictateResponse(
+                raw_transcript=t.raw_transcript,
+                revised_text=r.revised_text,
+                edit_summary=r.edit_summary,
+                uncertainty_flags=r.uncertainty_flags,
+            ),
+            transcribe_ms,
+            refine_ms,
         )

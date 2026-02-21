@@ -88,11 +88,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         switch await audioRecorder.start() {
         case .success:
             _ = recordingController.toggle()
-            menuBarController?.setRecordingActive(true)
+            menuBarController?.setIndicatorState(.recording)
             menuBarController?.setState("Recording")
             TraceLogger.log("recording started")
         case let .failure(error):
-            menuBarController?.setRecordingActive(false)
+            menuBarController?.setIndicatorState(.idle)
             menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
             TraceLogger.log("recording start failed: \(error)")
         }
@@ -101,7 +101,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func stopRecordingAndDictate(menuBarController: MenuBarController?) async {
         _ = recordingController.toggle()
-        menuBarController?.setRecordingActive(false)
+        menuBarController?.setIndicatorState(.idle)
         menuBarController?.setState("Stopping recording...")
 
         let stopResult = audioRecorder.stop()
@@ -112,6 +112,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             return
         case let .success(capturedAudio):
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
+            menuBarController?.setIndicatorState(.refining)
             menuBarController?.setState("Transcribing + refining...")
 
             do {
@@ -121,7 +122,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     TraceLogger.log("dictate skipped: api client unavailable")
                     return
                 }
-                let dictated = try await apiClient.dictate(
+                let dictatedCall = try await apiClient.dictate(
                     DictateRequest(
                         audio_b64: capturedAudio.data.base64EncodedString(),
                         sample_rate: capturedAudio.sampleRate,
@@ -129,18 +130,24 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                         session_id: sessionID
                     )
                 )
+                let dictated = dictatedCall.response
                 TraceLogger.log(
-                    "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), summary=\(dictated.edit_summary))"
+                    "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs.map(String.init) ?? "n/a"), refineMs=\(dictatedCall.refineMs.map(String.init) ?? "n/a"), summary=\(dictated.edit_summary))"
                 )
+                TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
+                TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
                 let insertResult = ClipboardInserter.insert(dictated.revised_text)
                 switch insertResult {
                 case .success:
+                    menuBarController?.setIndicatorState(.idle)
                     menuBarController?.setState("Inserted revised text")
                 case let .failure(error):
+                    menuBarController?.setIndicatorState(.idle)
                     menuBarController?.setState("Failed: \(Self.failureMessage(for: error))")
                     TraceLogger.log("revised text insert failed: \(error)")
                 }
             } catch {
+                menuBarController?.setIndicatorState(.idle)
                 menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
                 TraceLogger.log("dictate failed: \(error)")
             }
@@ -215,6 +222,10 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         case .exitFailed:
             return "Backend did not exit cleanly"
         }
+    }
+
+    private static func logSafeText(_ text: String) -> String {
+        text.replacingOccurrences(of: "\n", with: "\\n")
     }
 }
 

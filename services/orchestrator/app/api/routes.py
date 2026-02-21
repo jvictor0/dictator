@@ -2,7 +2,7 @@ import os
 import signal
 import time
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
 
 from app.models.contracts import (
     DictateRequest,
@@ -56,8 +56,13 @@ def refine(req: RefineRequest) -> RefineResponse:
 
 
 @router.post("/v1/dictate", response_model=DictateResponse)
-def dictate(req: DictateRequest) -> DictateResponse:
+def dictate(req: DictateRequest, response: Response) -> DictateResponse:
     try:
+        if hasattr(pipeline, "dictate_with_metrics"):
+            out, transcribe_ms, refine_ms = pipeline.dictate_with_metrics(req)  # type: ignore[attr-defined]
+            response.headers["X-Dictator-Transcribe-Ms"] = str(transcribe_ms)
+            response.headers["X-Dictator-Refine-Ms"] = str(refine_ms)
+            return out
         return pipeline.dictate(req)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -8,8 +8,9 @@ final class SmokeTests: XCTestCase {
     }
 
     func testStatusTitleIncludesIndicator() {
-        XCTAssertEqual(MenuBarController.makeStatusTitle(isRecording: false), "🫡 ⚪")
-        XCTAssertEqual(MenuBarController.makeStatusTitle(isRecording: true), "🫡 🔴")
+        XCTAssertEqual(MenuBarController.makeStatusTitle(state: .idle), "🫡 ⚪")
+        XCTAssertEqual(MenuBarController.makeStatusTitle(state: .recording), "🫡 🔴")
+        XCTAssertEqual(MenuBarController.makeStatusTitle(state: .refining), "🫡 🔵")
     }
 
     func testMenuIncludesQuitAction() {

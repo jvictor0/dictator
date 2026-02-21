@@ -59,6 +59,12 @@ public struct DictateResponse: Codable {
     public let uncertainty_flags: [String]
 }
 
+public struct DictateCallResult {
+    public let response: DictateResponse
+    public let transcribeMs: Int?
+    public let refineMs: Int?
+}
+
 public enum APIClientError: Error {
     case badStatus(Int)
     case emptyTranscript
@@ -77,7 +83,7 @@ public final class APIClient {
         baseURL.absoluteString
     }
 
-    public func dictate(_ payload: DictateRequest) async throws -> DictateResponse {
+    public func dictate(_ payload: DictateRequest) async throws -> DictateCallResult {
         var request = URLRequest(url: baseURL.appending(path: "/v1/dictate"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -90,7 +96,10 @@ public final class APIClient {
         guard (200...299).contains(http.statusCode) else {
             throw APIClientError.badStatus(http.statusCode)
         }
-        return try JSONDecoder().decode(DictateResponse.self, from: data)
+        let decoded = try JSONDecoder().decode(DictateResponse.self, from: data)
+        let transcribeMs = Int(http.value(forHTTPHeaderField: "X-Dictator-Transcribe-Ms") ?? "")
+        let refineMs = Int(http.value(forHTTPHeaderField: "X-Dictator-Refine-Ms") ?? "")
+        return DictateCallResult(response: decoded, transcribeMs: transcribeMs, refineMs: refineMs)
     }
 
     public func transcribe(_ payload: TranscribeRequest) async throws -> TranscribeResponse {

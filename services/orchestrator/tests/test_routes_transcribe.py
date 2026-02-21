@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 import app.api.routes as routes
 from app.models.contracts import (
@@ -141,7 +141,7 @@ def test_dictate_maps_runtime_error_to_503() -> None:
             session_id="route-test",
         )
         try:
-            routes.dictate(req)
+            routes.dictate(req, Response())
             assert False, "Expected HTTPException"
         except HTTPException as exc:
             assert exc.status_code == 503

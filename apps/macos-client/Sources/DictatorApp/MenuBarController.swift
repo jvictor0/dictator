@@ -1,19 +1,26 @@
 import AppKit
 
 final class MenuBarController {
+    enum IndicatorState {
+        case idle
+        case recording
+        case refining
+    }
+
     private let statusItem: NSStatusItem
     private let stateMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.menu = Self.makeMenu(stateMenuItem: stateMenuItem, target: self)
-        setRecordingActive(false)
+        setIndicatorState(.idle)
         setState("Ready")
     }
 
     static let statusTitle = "🫡"
     static let idleIndicator = "⚪"
-    static let activeIndicator = "🔴"
+    static let recordingIndicator = "🔴"
+    static let refiningIndicator = "🔵"
 
     static func makeMenu(stateMenuItem: NSMenuItem, target: AnyObject) -> NSMenu {
         let menu = NSMenu()
@@ -31,13 +38,21 @@ final class MenuBarController {
         TraceLogger.log("menu state updated: \(message)")
     }
 
-    func setRecordingActive(_ isRecording: Bool) {
-        statusItem.button?.title = Self.makeStatusTitle(isRecording: isRecording)
-        TraceLogger.log("menu recording indicator updated (isRecording=\(isRecording))")
+    func setIndicatorState(_ state: IndicatorState) {
+        statusItem.button?.title = Self.makeStatusTitle(state: state)
+        TraceLogger.log("menu indicator updated (state=\(state))")
     }
 
-    static func makeStatusTitle(isRecording: Bool) -> String {
-        let indicator = isRecording ? activeIndicator : idleIndicator
+    static func makeStatusTitle(state: IndicatorState) -> String {
+        let indicator: String
+        switch state {
+        case .idle:
+            indicator = idleIndicator
+        case .recording:
+            indicator = recordingIndicator
+        case .refining:
+            indicator = refiningIndicator
+        }
         return "\(statusTitle) \(indicator)"
     }
 
