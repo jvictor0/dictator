@@ -17,6 +17,7 @@ DerivedData/
 *.xcworkspace/
 
 # Environment
+.env
 .env.local
 
 # Editors
