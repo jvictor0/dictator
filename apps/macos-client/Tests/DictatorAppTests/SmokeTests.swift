@@ -9,11 +9,18 @@ final class SmokeTests: XCTestCase {
 
     func testMenuIncludesQuitAction() {
         let target = NSObject()
-        let menu = MenuBarController.makeMenu(target: target)
+        let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let menu = MenuBarController.makeMenu(stateMenuItem: stateItem, target: target)
 
-        XCTAssertEqual(menu.items.count, 1)
-        XCTAssertEqual(menu.items[0].title, "Quit")
-        XCTAssertEqual(menu.items[0].keyEquivalent, "q")
+        XCTAssertEqual(menu.items.count, 3)
+        XCTAssertEqual(menu.items[2].title, "Quit")
+        XCTAssertEqual(menu.items[2].keyEquivalent, "q")
+    }
+
+    func testCapsLockTriggerOnlyOnCapsFlagsChanged() {
+        XCTAssertTrue(CapsLockTriggerController.shouldTrigger(eventType: .flagsChanged, keyCode: 57))
+        XCTAssertFalse(CapsLockTriggerController.shouldTrigger(eventType: .keyDown, keyCode: 57))
+        XCTAssertFalse(CapsLockTriggerController.shouldTrigger(eventType: .flagsChanged, keyCode: 0))
     }
 
     func testDecodeDictateResponseShape() throws {
