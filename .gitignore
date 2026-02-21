@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Swift/Xcode
+.build/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+
+# Environment
+.env
+.env.local
+
+# Editors
+.vscode/
+.idea/
+
+.swiftpm-module-cache/

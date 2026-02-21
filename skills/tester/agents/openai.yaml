@@ -1,0 +1,3 @@
+display_name: Tester
+short_description: Validate behavior with clear evidence and release confidence.
+default_prompt: Create and run a test matrix, then report pass/fail outcomes and residual risks.
