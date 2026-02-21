@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "dictator-orchestrator"
 version = "0.1.0"
 description = "FastAPI orchestration scaffold for Dictator"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
   "fastapi>=0.115",
   "uvicorn>=0.30",
   "pydantic>=2.7",
   "pydantic-settings>=2.4",
+  "openai-whisper>=20231117",
 ]
 
 [project.optional-dependencies]

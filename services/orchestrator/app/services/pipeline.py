@@ -7,14 +7,21 @@ from app.models.contracts import (
     TranscribeRequest,
     TranscribeResponse,
 )
+from app.services.llm.base import LLMProvider
 from app.services.llm.openai_refiner import OpenAIRefiner
+from app.services.stt.base import STTProvider
 from app.services.stt.whisper_local import WhisperLocalProvider
+from typing import Optional
 
 
 class DictationPipeline:
-    def __init__(self) -> None:
-        self.stt = WhisperLocalProvider()
-        self.llm = OpenAIRefiner()
+    def __init__(
+        self,
+        stt_provider: Optional[STTProvider] = None,
+        llm_provider: Optional[LLMProvider] = None,
+    ) -> None:
+        self.stt = stt_provider or WhisperLocalProvider()
+        self.llm = llm_provider or OpenAIRefiner()
 
     def transcribe(self, req: TranscribeRequest) -> TranscribeResponse:
         # Future provider switch can use settings.stt_provider.
