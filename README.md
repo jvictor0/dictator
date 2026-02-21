@@ -29,6 +29,7 @@ Dictator is a macOS menubar dictation app bootstrap with a multi-agent developme
 ## Workflow
 
 See `/docs/governance/WORKFLOWS.md` and `/AGENTS.md` for role orchestration and quality gates.
+For short execution prompts, use `/Users/joyo/dictator/ENTRYPOINT.md`.
 
 ## Roadmap
 
