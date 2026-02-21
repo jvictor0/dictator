@@ -4,8 +4,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let recordingController = RecordingController()
-        menuBarController = MenuBarController(recordingController: recordingController)
+        menuBarController = MenuBarController()
     }
 }
 

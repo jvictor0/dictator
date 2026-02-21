@@ -2,33 +2,21 @@ import AppKit
 
 final class MenuBarController {
     private let statusItem: NSStatusItem
-    private let recordingController: RecordingController
 
-    init(recordingController: RecordingController) {
-        self.recordingController = recordingController
+    init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        configureMenu()
-        updateTitle()
+        statusItem.menu = Self.makeMenu(target: self)
+        statusItem.button?.title = Self.statusTitle
     }
 
-    private func configureMenu() {
+    static let statusTitle = "Dictator"
+
+    static func makeMenu(target: AnyObject) -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Toggle Dictation", action: #selector(toggleDictation), keyEquivalent: "d"))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
-
-        menu.items.forEach { $0.target = self }
-        statusItem.menu = menu
-    }
-
-    private func updateTitle() {
-        statusItem.button?.title = recordingController.isRecording ? "Dictator ●" : "Dictator"
-    }
-
-    @objc
-    func toggleDictation() {
-        recordingController.toggle()
-        updateTitle()
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = target
+        menu.addItem(quitItem)
+        return menu
     }
 
     @objc

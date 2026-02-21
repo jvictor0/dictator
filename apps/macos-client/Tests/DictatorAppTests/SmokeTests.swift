@@ -1,13 +1,19 @@
+import AppKit
 import XCTest
 @testable import DictatorApp
 
 final class SmokeTests: XCTestCase {
-    func testRecordingToggleFlipsState() {
-        let controller = RecordingController()
-        XCTAssertFalse(controller.isRecording)
-        XCTAssertTrue(controller.toggle())
-        XCTAssertTrue(controller.isRecording)
-        XCTAssertFalse(controller.toggle())
+    func testStatusTitleIsDictator() {
+        XCTAssertEqual(MenuBarController.statusTitle, "Dictator")
+    }
+
+    func testMenuIncludesQuitAction() {
+        let target = NSObject()
+        let menu = MenuBarController.makeMenu(target: target)
+
+        XCTAssertEqual(menu.items.count, 1)
+        XCTAssertEqual(menu.items[0].title, "Quit")
+        XCTAssertEqual(menu.items[0].keyEquivalent, "q")
     }
 
     func testDecodeDictateResponseShape() throws {
