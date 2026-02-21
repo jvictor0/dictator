@@ -1,3 +1,5 @@
+import pytest
+
 from app.models.contracts import (
     DictateRequest,
     RefineRequest,
@@ -28,6 +30,12 @@ class FakeLLMProvider(LLMProvider):
             edit_summary="Mock capitalization",
             uncertainty_flags=[],
         )
+
+
+class FailingLLMProvider(LLMProvider):
+    def refine(self, req: RefineRequest) -> RefineResponse:
+        _ = req
+        raise RuntimeError("provider outage")
 
 
 def test_transcribe_returns_expected_shape() -> None:
@@ -64,3 +72,32 @@ def test_dictate_combines_transcribe_and_refine() -> None:
     )
     assert out.raw_transcript
     assert out.revised_text
+
+
+def test_dictate_fallback_uses_raw_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.pipeline.settings.refinement_fallback_mode", "use_raw")
+    pipeline = DictationPipeline(stt_provider=FakeSTTProvider(), llm_provider=FailingLLMProvider())
+    out = pipeline.dictate(
+        DictateRequest(
+            audio_b64="ZmFrZQ==",
+            sample_rate=16000,
+            locale="en-US",
+            session_id="s3",
+        )
+    )
+    assert out.revised_text == out.raw_transcript
+    assert "refinement_failed_used_raw" in out.uncertainty_flags
+
+
+def test_dictate_fail_closed_raises(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.pipeline.settings.refinement_fallback_mode", "fail_closed")
+    pipeline = DictationPipeline(stt_provider=FakeSTTProvider(), llm_provider=FailingLLMProvider())
+    with pytest.raises(RuntimeError, match="fail_closed"):
+        pipeline.dictate(
+            DictateRequest(
+                audio_b64="ZmFrZQ==",
+                sample_rate=16000,
+                locale="en-US",
+                session_id="s4",
+            )
+        )

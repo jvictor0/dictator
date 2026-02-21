@@ -2,16 +2,16 @@
 
 Swift menubar scaffold for Dictator.
 
-## Current slice behavior (Slice 4)
+## Current slice behavior (Slice 5)
 
 - Menubar status item titled `🫡`
 - App-managed backend lifecycle: starts orchestrator automatically on launch and stops managed process on app quit
 - Pressing Caps Lock toggles recording state
 - Recording `on` shows `🔴` indicator in menubar title (`🫡 🔴`)
 - Recording `off` shows `⚪` indicator in menubar title (`🫡 ⚪`)
-- Recording `off` sends captured audio to `/v1/transcribe` and inserts returned transcript
+- Recording `off` sends captured audio to `/v1/dictate` and inserts returned revised text
 - Insertion path uses clipboard + synthetic `Cmd+V` and restores prior clipboard contents
-- Menubar status line reports explicit failures (permission missing, STT failure, insertion failure)
+- Menubar status line reports explicit failures (permission missing, STT/refinement failure, insertion failure)
 - Menubar menu includes `Quit`
 
 ## Backend notes

@@ -1,7 +1,15 @@
 from fastapi import HTTPException
 
 import app.api.routes as routes
-from app.models.contracts import Segment, TranscribeRequest, TranscribeResponse
+from app.models.contracts import (
+    DictateRequest,
+    DictateResponse,
+    RefineRequest,
+    RefineResponse,
+    Segment,
+    TranscribeRequest,
+    TranscribeResponse,
+)
 
 
 class _ErrorPipeline:
@@ -13,10 +21,12 @@ class _ErrorPipeline:
         raise self._exc
 
     def refine(self, req):
-        raise NotImplementedError
+        _ = req
+        raise self._exc
 
     def dictate(self, req):
-        raise NotImplementedError
+        _ = req
+        raise self._exc
 
 
 class _SuccessPipeline:
@@ -30,10 +40,21 @@ class _SuccessPipeline:
         )
 
     def refine(self, req):
-        raise NotImplementedError
+        _ = req
+        return RefineResponse(
+            revised_text="refined text",
+            edit_summary="summary",
+            uncertainty_flags=[],
+        )
 
     def dictate(self, req):
-        raise NotImplementedError
+        _ = req
+        return DictateResponse(
+            raw_transcript="raw",
+            revised_text="refined text",
+            edit_summary="summary",
+            uncertainty_flags=[],
+        )
 
 
 def _request() -> TranscribeRequest:
@@ -83,3 +104,47 @@ def test_transcribe_success_route_shape() -> None:
 
     assert out.raw_transcript == "route success"
     assert out.segments[0].text == "route success"
+
+
+def test_refine_maps_runtime_error_to_503() -> None:
+    original = routes.pipeline
+    routes.pipeline = _ErrorPipeline(RuntimeError("refiner outage"))
+    try:
+        try:
+            routes.refine(RefineRequest(raw_transcript="hello"))
+            assert False, "Expected HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 503
+            assert exc.detail == "refiner outage"
+    finally:
+        routes.pipeline = original
+
+
+def test_refine_success_route_shape() -> None:
+    original = routes.pipeline
+    routes.pipeline = _SuccessPipeline()
+    try:
+        out = routes.refine(RefineRequest(raw_transcript="hello"))
+    finally:
+        routes.pipeline = original
+    assert out.revised_text == "refined text"
+
+
+def test_dictate_maps_runtime_error_to_503() -> None:
+    original = routes.pipeline
+    routes.pipeline = _ErrorPipeline(RuntimeError("dictate outage"))
+    try:
+        req = DictateRequest(
+            audio_b64="ZmFrZS1hdWRpbw==",
+            sample_rate=16000,
+            locale="en-US",
+            session_id="route-test",
+        )
+        try:
+            routes.dictate(req)
+            assert False, "Expected HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 503
+            assert exc.detail == "dictate outage"
+    finally:
+        routes.pipeline = original

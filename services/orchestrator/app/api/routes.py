@@ -47,9 +47,19 @@ def transcribe(req: TranscribeRequest) -> TranscribeResponse:
 
 @router.post("/v1/refine", response_model=RefineResponse)
 def refine(req: RefineRequest) -> RefineResponse:
-    return pipeline.refine(req)
+    try:
+        return pipeline.refine(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/v1/dictate", response_model=DictateResponse)
 def dictate(req: DictateRequest) -> DictateResponse:
-    return pipeline.dictate(req)
+    try:
+        return pipeline.dictate(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

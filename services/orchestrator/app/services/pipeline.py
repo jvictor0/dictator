@@ -41,13 +41,23 @@ class DictationPipeline:
                 session_id=req.session_id,
             )
         )
-        r = self.refine(
-            RefineRequest(
-                raw_transcript=t.raw_transcript,
-                optional_context=req.optional_context,
-                style_prefs=req.style_prefs,
+        try:
+            r = self.refine(
+                RefineRequest(
+                    raw_transcript=t.raw_transcript,
+                    optional_context=req.optional_context,
+                    style_prefs=req.style_prefs,
+                )
             )
-        )
+        except Exception as exc:
+            if settings.refinement_fallback_mode == "use_raw":
+                return DictateResponse(
+                    raw_transcript=t.raw_transcript,
+                    revised_text=t.raw_transcript,
+                    edit_summary=f"Refinement failed, used raw transcript: {str(exc)[:160]}",
+                    uncertainty_flags=["refinement_failed_used_raw"],
+                )
+            raise RuntimeError(f"Refinement failed and fallback mode is fail_closed: {exc}") from exc
         return DictateResponse(
             raw_transcript=t.raw_transcript,
             revised_text=r.revised_text,

@@ -76,7 +76,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if recordingController.isRecording {
-            await stopRecordingAndTranscribe(menuBarController: menuBarController)
+            await stopRecordingAndDictate(menuBarController: menuBarController)
         } else {
             await startRecording(menuBarController: menuBarController)
         }
@@ -99,7 +99,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func stopRecordingAndTranscribe(menuBarController: MenuBarController?) async {
+    private func stopRecordingAndDictate(menuBarController: MenuBarController?) async {
         _ = recordingController.toggle()
         menuBarController?.setRecordingActive(false)
         menuBarController?.setState("Stopping recording...")
@@ -112,35 +112,37 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             return
         case let .success(capturedAudio):
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
-            menuBarController?.setState("Transcribing...")
+            menuBarController?.setState("Transcribing + refining...")
 
             do {
                 let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
                 guard let apiClient else {
                     menuBarController?.setState("Failed: Backend unavailable")
-                    TraceLogger.log("transcribe skipped: api client unavailable")
+                    TraceLogger.log("dictate skipped: api client unavailable")
                     return
                 }
-                let transcript = try await apiClient.transcribe(
-                    TranscribeRequest(
+                let dictated = try await apiClient.dictate(
+                    DictateRequest(
                         audio_b64: capturedAudio.data.base64EncodedString(),
                         sample_rate: capturedAudio.sampleRate,
                         locale: locale,
                         session_id: sessionID
                     )
                 )
-                TraceLogger.log("transcribe success (chars=\(transcript.raw_transcript.count))")
-                let insertResult = ClipboardInserter.insert(transcript.raw_transcript)
+                TraceLogger.log(
+                    "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), summary=\(dictated.edit_summary))"
+                )
+                let insertResult = ClipboardInserter.insert(dictated.revised_text)
                 switch insertResult {
                 case .success:
-                    menuBarController?.setState("Inserted transcript")
+                    menuBarController?.setState("Inserted revised text")
                 case let .failure(error):
                     menuBarController?.setState("Failed: \(Self.failureMessage(for: error))")
-                    TraceLogger.log("transcript insert failed: \(error)")
+                    TraceLogger.log("revised text insert failed: \(error)")
                 }
             } catch {
-                menuBarController?.setState("Failed: \(Self.transcriptionFailureMessage(for: error))")
-                TraceLogger.log("transcribe failed: \(error)")
+                menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
+                TraceLogger.log("dictate failed: \(error)")
             }
         }
     }
@@ -171,16 +173,16 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func transcriptionFailureMessage(for error: Error) -> String {
+    private static func dictationFailureMessage(for error: Error) -> String {
         if let apiError = error as? APIClientError {
             switch apiError {
             case let .badStatus(statusCode):
-                return "STT request failed (\(statusCode))"
+                return "Dictation request failed (\(statusCode))"
             case .emptyTranscript:
                 return "STT returned empty transcript"
             }
         }
-        return "STT request failed"
+        return "Dictation request failed"
     }
 
     @MainActor
