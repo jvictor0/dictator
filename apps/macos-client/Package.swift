@@ -9,9 +9,23 @@ let package = Package(
         .executable(name: "DictatorApp", targets: ["DictatorApp"])
     ],
     targets: [
+        .systemLibrary(
+            name: "CWhisper"
+        ),
         .target(
             name: "DictatorCore",
-            path: "Sources/DictatorCore"
+            dependencies: ["CWhisper"],
+            path: "Sources/DictatorCore",
+            linkerSettings: [
+                .linkedLibrary("whisper"),
+                .linkedLibrary("ggml"),
+                .linkedLibrary("ggml-base"),
+                .unsafeFlags([
+                    "-L/opt/homebrew/Cellar/whisper-cpp/1.8.3/libexec/lib",
+                    "-L/opt/homebrew/lib",
+                    "-L/usr/local/lib"
+                ])
+            ]
         ),
         .executableTarget(
             name: "DictatorApp",

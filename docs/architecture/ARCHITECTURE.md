@@ -6,6 +6,7 @@
   - Contract DTOs (`Transcribe*`, `Refine*`, `Dictate*`)
   - Pipeline orchestration (`PipelineOrchestrator`)
   - STT/refinement interfaces (`STTEngine`, `RefinementEngine`)
+  - Whisper runtime abstraction (`WhisperRuntime`) with native in-process implementation
   - Secret interface (`SecretStore`)
 - macOS wrapper (`apps/macos-client/Sources/DictatorApp`)
   - Menubar state and record toggle

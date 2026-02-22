@@ -3,13 +3,14 @@
 ## Automated validation
 
 1. Command: `cd /Users/joyo/dictator/apps/macos-client && swift test`
-2. Result: pass (`22` tests, `0` failures)
+2. Result: pass (`23` tests, `0` failures)
 
 ## Covered scenarios
 
 - Whisper JSON parser maps output into contract response fields.
 - Invalid audio payload produces explicit STT failure.
 - whisper process non-zero exit maps to explicit STT failure.
+- Native runtime unavailable path maps to explicit STT failure.
 - Existing macOS app smoke tests remain passing.
 
 ## Manual validation status

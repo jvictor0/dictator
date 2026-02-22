@@ -23,11 +23,11 @@ Swift menubar scaffold for Dictator.
 ## STT runtime (whisper.cpp)
 
 - Default STT engine is `WhisperCPPBridgeSTTEngine`.
-- Configure executable/model via environment:
-  - `DICTATOR_WHISPER_CPP_BIN` (default: `whisper-cli`)
+- Runtime is native-only (in-process Whisper bridge).
+- Configure model/language via environment:
   - `DICTATOR_WHISPER_MODEL` (default: `models/ggml-base.en.bin`)
   - `DICTATOR_WHISPER_LANGUAGE` (default: `auto`)
-- If whisper binary/model is missing or fails, dictation shows explicit `Speech recognition failed: ...`.
+- If native whisper runtime is not linked or model setup fails, dictation shows explicit `Speech recognition failed: ...`.
 
 ## Included wiring points for future slices
 

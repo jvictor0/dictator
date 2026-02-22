@@ -33,8 +33,8 @@ final class WhisperCPPBridgeSTTEngineTests: XCTestCase {
 
     func testTranscribeFailsForInvalidBase64() async {
         let engine = WhisperCPPBridgeSTTEngine(
-            configuration: .init(binaryPath: "/bin/true", modelPath: "model.bin"),
-            runner: { _, _ in .init(exitCode: 0, stdout: "", stderr: "") }
+            configuration: .init(modelPath: "model.bin"),
+            runtime: StubRuntime(result: .success(TranscribeResponse(raw_transcript: "", segments: [], confidence: 0, duration_ms: 0)))
         )
 
         do {
@@ -52,8 +52,8 @@ final class WhisperCPPBridgeSTTEngineTests: XCTestCase {
 
     func testTranscribeMapsWhisperFailure() async {
         let engine = WhisperCPPBridgeSTTEngine(
-            configuration: .init(binaryPath: "/usr/bin/env", modelPath: "missing-model.bin"),
-            runner: { _, _ in .init(exitCode: 1, stdout: "", stderr: "model missing") }
+            configuration: .init(modelPath: "missing-model.bin"),
+            runtime: StubRuntime(result: .failure(DictatorError.sttFailed("whisper.cpp failed: model missing")))
         )
 
         do {
@@ -68,5 +68,28 @@ final class WhisperCPPBridgeSTTEngineTests: XCTestCase {
         } catch {
             XCTFail("unexpected error: \(error)")
         }
+    }
+
+    func testNativeRuntimeReturnsSTTFailureForInvalidInputFile() async {
+        let runtime = WhisperCppNativeRuntime()
+        do {
+            _ = try await runtime.transcribe(audioFileURL: URL(fileURLWithPath: "/tmp/none.wav"), modelPath: "model.bin", language: "en")
+            XCTFail("expected failure")
+        } catch let error as DictatorError {
+            guard case .sttFailed = error else {
+                XCTFail("unexpected error: \(error)")
+                return
+            }
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+}
+
+private struct StubRuntime: WhisperRuntime {
+    let result: Result<TranscribeResponse, Error>
+
+    func transcribe(audioFileURL: URL, modelPath: String, language: String) async throws -> TranscribeResponse {
+        try result.get()
     }
 }
