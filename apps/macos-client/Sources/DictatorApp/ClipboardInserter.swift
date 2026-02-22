@@ -9,6 +9,8 @@ public enum ClipboardInserter {
     }
 
     private static let selectedTextLimit = 12000
+    private static let selectionCaptureTimeoutSeconds: TimeInterval = 0.25
+    private static let selectionCapturePollIntervalSeconds: TimeInterval = 0.01
 
     struct PasteboardSnapshot {
         let items: [NSPasteboardItem]
@@ -79,16 +81,53 @@ public enum ClipboardInserter {
         }
 
         let pb = NSPasteboard.general
+        let priorChangeCount = pb.changeCount
         let priorClipboard = snapshot(pb)
 
         guard synthesizeCommandKey(virtualKey: 8) else {
             return .failure(.keyEventSynthesisFailed)
         }
 
-        Thread.sleep(forTimeInterval: 0.08)
-        let selected = normalizedSelectedText(pb.string(forType: .string))
+        let selected = extractSelectedText(
+            priorChangeCount: priorChangeCount,
+            currentChangeCount: waitForPasteboardChange(
+                pasteboard: pb,
+                expectedMinimumChangeCount: priorChangeCount + 1,
+                timeoutSeconds: selectionCaptureTimeoutSeconds,
+                pollIntervalSeconds: selectionCapturePollIntervalSeconds
+            ),
+            rawClipboardValue: pb.string(forType: .string)
+        )
         _ = restore(priorClipboard, to: pb)
         return .success(selected)
+    }
+
+    static func extractSelectedText(
+        priorChangeCount: Int,
+        currentChangeCount: Int,
+        rawClipboardValue: String?
+    ) -> String? {
+        // Only trust selected text when Command+C produced a fresh pasteboard write.
+        guard currentChangeCount > priorChangeCount else {
+            return nil
+        }
+        return normalizedSelectedText(rawClipboardValue)
+    }
+
+    static func waitForPasteboardChange(
+        pasteboard: NSPasteboard,
+        expectedMinimumChangeCount: Int,
+        timeoutSeconds: TimeInterval,
+        pollIntervalSeconds: TimeInterval
+    ) -> Int {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if pasteboard.changeCount >= expectedMinimumChangeCount {
+                return pasteboard.changeCount
+            }
+            Thread.sleep(forTimeInterval: pollIntervalSeconds)
+        }
+        return pasteboard.changeCount
     }
 
     static func normalizedSelectedText(_ value: String?) -> String? {

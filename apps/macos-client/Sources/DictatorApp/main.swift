@@ -217,6 +217,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 TraceLogger.log(
                     "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs), refineMs=\(dictatedCall.refineMs), summary=\(dictated.edit_summary))"
                 )
+                logRefinementMode(context: requestContext)
                 TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
                 TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
                 if dictated.revised_text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -336,6 +337,17 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             return "STT returned empty transcript"
         }
         return "Dictation request failed"
+    }
+
+    private func logRefinementMode(context: [String: String]?) {
+        let selected = context?["selected_text"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if selected.isEmpty {
+            TraceLogger.log("refinement mode: transcript-refinement")
+            return
+        }
+
+        TraceLogger.log("refinement mode: selected-text-transform (selectedChars=\(selected.count))")
+        TraceLogger.log("selected text for transform: \(Self.logSafeText(selected))")
     }
 
     private static func logSafeText(_ text: String) -> String {

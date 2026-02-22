@@ -147,6 +147,33 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(normalized?.count, 12000)
     }
 
+    func testExtractSelectedTextIgnoresClipboardWhenChangeCountDidNotAdvance() {
+        let selected = ClipboardInserter.extractSelectedText(
+            priorChangeCount: 10,
+            currentChangeCount: 10,
+            rawClipboardValue: "existing clipboard content"
+        )
+        XCTAssertNil(selected)
+    }
+
+    func testExtractSelectedTextAcceptsFreshClipboardCopy() {
+        let selected = ClipboardInserter.extractSelectedText(
+            priorChangeCount: 10,
+            currentChangeCount: 11,
+            rawClipboardValue: "  selected text  "
+        )
+        XCTAssertEqual(selected, "selected text")
+    }
+
+    func testExtractSelectedTextRejectsWhitespaceWhenChangeCountAdvances() {
+        let selected = ClipboardInserter.extractSelectedText(
+            priorChangeCount: 4,
+            currentChangeCount: 5,
+            rawClipboardValue: " \n\t "
+        )
+        XCTAssertNil(selected)
+    }
+
     func testFocusedInputRoleDetection() {
         XCTAssertTrue(FocusedInputDetector.isTextInputRole(role: kAXTextFieldRole as String, editableAttribute: nil))
         XCTAssertTrue(FocusedInputDetector.isTextInputRole(role: "AXUnknown", editableAttribute: true))
