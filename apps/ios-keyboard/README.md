@@ -1,11 +1,13 @@
 # iOS Keyboard Wrapper Scaffold
 
-This folder contains the planned iOS wrappers around `DictatorCore`:
+This folder contains direct-device deployment scaffolding for iOS host + keyboard extension.
 
-- `HostApp/`: onboarding, keyboard enablement guidance, API key management, diagnostics.
-- `KeyboardExtension/`: custom keyboard shell that invokes shared core dictation logic.
+- `HostApp/`: onboarding, keyboard enablement guidance, API key management, diagnostics template.
+- `KeyboardExtension/`: keyboard extension shell + placeholder pipeline controller.
+- `Shared/`: cross-target constants for app-group/keychain identifiers.
+- `XCODE_SETUP.md`: exact Xcode checklist for target creation/signing/on-device install.
 
-## Runtime model
+## Runtime model (target)
 
 - STT: on-device (target architecture is `whisper.cpp` bridge into Swift).
 - Refinement: OpenAI API via user-pasted key stored securely and shared with extension.
@@ -18,4 +20,5 @@ This folder contains the planned iOS wrappers around `DictatorCore`:
 
 ## Current status
 
-This is a source scaffold documenting target wrappers and interfaces. Xcode project + entitlements wiring is the next step.
+This scaffold is ready for Xcode target wiring in-place within this repo.
+No TestFlight setup is required for direct deployment to your personal iPhone.

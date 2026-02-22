@@ -1,25 +1,39 @@
-import DictatorCore
 import Foundation
 
-final class SettingsViewModel {
-    private let secretStore: SecretStore
+@MainActor
+final class SettingsViewModel: ObservableObject {
+    @Published var apiKeyInput: String = ""
+    @Published private(set) var statusMessage: String = ""
+    @Published private(set) var hasStoredKey: Bool = false
 
-    init(secretStore: SecretStore) {
-        self.secretStore = secretStore
-    }
+    private let store = SharedKeychainSecretStore()
 
-    func hasAPIKey() -> Bool {
-        guard let value = try? secretStore.getOpenAIKey() else {
-            return false
+    func refresh() {
+        do {
+            let key = try store.getOpenAIKey()?.trimmingCharacters(in: .whitespacesAndNewlines)
+            hasStoredKey = !(key?.isEmpty ?? true)
+            statusMessage = hasStoredKey ? "OpenAI key is saved." : "OpenAI key not set."
+        } catch {
+            statusMessage = "Could not read keychain item."
         }
-        return !(value?.isEmpty ?? true)
     }
 
-    func saveAPIKey(_ value: String) throws {
-        try secretStore.setOpenAIKey(value)
+    func save() {
+        do {
+            try store.setOpenAIKey(apiKeyInput)
+            apiKeyInput = ""
+            refresh()
+        } catch {
+            statusMessage = "Failed to save OpenAI key."
+        }
     }
 
-    func clearAPIKey() throws {
-        try secretStore.clearOpenAIKey()
+    func clear() {
+        do {
+            try store.clearOpenAIKey()
+            refresh()
+        } catch {
+            statusMessage = "Failed to clear OpenAI key."
+        }
     }
 }
