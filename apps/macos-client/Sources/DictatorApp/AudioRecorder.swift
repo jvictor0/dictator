@@ -31,7 +31,7 @@ public final class AudioRecorder {
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("dictator-recording-\(UUID().uuidString)")
-            .appendingPathExtension("caf")
+            .appendingPathExtension("wav")
 
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,

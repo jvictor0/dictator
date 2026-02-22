@@ -18,9 +18,9 @@ final class SmokeTests: XCTestCase {
         let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let menu = MenuBarController.makeMenu(stateMenuItem: stateItem, target: target)
 
-        XCTAssertEqual(menu.items.count, 3)
-        XCTAssertEqual(menu.items[2].title, "Quit")
-        XCTAssertEqual(menu.items[2].keyEquivalent, "q")
+        XCTAssertEqual(menu.items.count, 6)
+        XCTAssertEqual(menu.items[5].title, "Quit")
+        XCTAssertEqual(menu.items[5].keyEquivalent, "q")
     }
 
     func testCapsLockTriggerOnlyOnCapsFlagsChanged() {
@@ -60,30 +60,6 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(controller.isRecording)
         XCTAssertFalse(controller.toggle())
         XCTAssertFalse(controller.isRecording)
-    }
-
-    func testBackendManagerPythonVersionSupport() {
-        XCTAssertTrue(BackendServiceManager.isSupportedPythonVersionString("3.9"))
-        XCTAssertTrue(BackendServiceManager.isSupportedPythonVersionString("3.11"))
-        XCTAssertFalse(BackendServiceManager.isSupportedPythonVersionString("3.8"))
-        XCTAssertFalse(BackendServiceManager.isSupportedPythonVersionString("not-a-version"))
-    }
-
-    func testBackendManagerCachedFailureWindow() {
-        XCTAssertTrue(
-            BackendServiceManager.shouldUseCachedInstallFailure(
-                now: 1000,
-                stamp: 950,
-                retryInterval: 60
-            )
-        )
-        XCTAssertFalse(
-            BackendServiceManager.shouldUseCachedInstallFailure(
-                now: 1000,
-                stamp: 500,
-                retryInterval: 60
-            )
-        )
     }
 
     func testClipboardSnapshotRestoreRoundTrip() {

@@ -2,24 +2,29 @@
 
 ## Components
 
-- macOS client (`apps/macos-client`)
+- Shared Swift core (`apps/macos-client/Sources/DictatorCore`)
+  - Contract DTOs (`Transcribe*`, `Refine*`, `Dictate*`)
+  - Pipeline orchestration (`PipelineOrchestrator`)
+  - STT/refinement interfaces (`STTEngine`, `RefinementEngine`)
+  - Secret interface (`SecretStore`)
+- macOS wrapper (`apps/macos-client/Sources/DictatorApp`)
   - Menubar state and record toggle
-  - Backend API client
-  - Clipboard paste insertion fallback
-- Orchestrator service (`services/orchestrator`)
-  - Endpoint routing and request validation
-  - STT adapter interface (local Whisper first)
-  - LLM refinement adapter interface (cloud API key first)
-- Shared contract (`contracts/dictation_v1.yaml`)
+  - Audio capture and insertion UX
+  - macOS Keychain `SecretStore` adapter
+- iOS wrappers (`apps/ios-keyboard`)
+  - Host app settings/onboarding shell
+  - Keyboard extension shell
+- Shared contract spec (`contracts/dictation_v1.yaml`)
 
 ## Data flow
 
-1. Client sends audio + metadata to `/v1/transcribe` or `/v1/dictate`.
-2. Service runs STT adapter and returns raw transcript.
-3. Service runs refinement adapter and returns revised text.
-4. Client inserts revised text.
+1. Wrapper captures audio and context.
+2. Wrapper calls `DictatorCoreClient` in-process.
+3. Core runs STT engine to generate raw transcript.
+4. Core runs refinement engine with optional context and style prefs.
+5. Wrapper inserts revised text (or surfaces explicit failure).
 
 ## Extensibility
 
 - Provider adapters isolate STT/LLM vendor logic.
-- Endpoint contract remains stable while internals evolve.
+- Contract DTO schema remains stable while internals evolve.

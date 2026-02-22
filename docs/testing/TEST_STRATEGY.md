@@ -10,11 +10,10 @@
 
 - Unit: adapter and pipeline logic
 - Contract: payload compatibility against YAML spec
-- Smoke: macOS client state transitions and API response handling
+- Smoke: macOS client state transitions and in-process pipeline response handling
 
 ## Minimum CI checks
 
-- `pytest` in `services/orchestrator`
 - `swift test` in `apps/macos-client`
 
 ## Manual checks (later)

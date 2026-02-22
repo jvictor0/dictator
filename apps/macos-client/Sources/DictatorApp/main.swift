@@ -1,4 +1,5 @@
 import AppKit
+import DictatorCore
 
 final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private static let backspaceKeyCode: UInt16 = 51
@@ -10,12 +11,16 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var backspaceLocalMonitor: Any?
     private let recordingController = RecordingController()
     private let audioRecorder = AudioRecorder()
-    private let backendManager = BackendServiceManager()
     private let activeTargetContextProvider = ActiveTargetContextProvider()
-    private var apiClient: APIClient?
+    private let secretStore = KeychainSecretStore()
+    private lazy var coreClient: any DictatorCoreClient = PipelineOrchestrator(
+        sttEngine: WhisperCPPBridgeSTTEngine(),
+        refinementEngine: OpenAIRefinementEngine(secretStore: secretStore)
+    )
+    private lazy var apiClient: APIClient = APIClient(coreClient: coreClient)
+
     private let sessionID = UUID().uuidString
     private var isHandlingTrigger = false
-    private var isBackendStarting = false
     private var recordingContext: [String: String]?
     private var lastCancelTimestamp: TimeInterval?
 
@@ -29,6 +34,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         TraceLogger.log("trace file: \(TraceLogger.path)")
 
         let menuBarController = MenuBarController()
+        menuBarController.onSetAPIKey = { [weak self] in
+            self?.promptForAPIKey(menuBarController: menuBarController)
+        }
+        menuBarController.onClearAPIKey = { [weak self] in
+            self?.clearAPIKey(menuBarController: menuBarController)
+        }
         self.menuBarController = menuBarController
 
         let triggerController = CapsLockTriggerController { [weak menuBarController, weak self] in
@@ -43,13 +54,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         self.capsLockTriggerController = triggerController
         armBackspaceCancelMonitors()
         if triggerController.start() {
-            menuBarController.setState("Starting backend...")
-            TraceLogger.log("app ready: caps lock trigger armed")
-            Task { @MainActor in
-                self.isBackendStarting = true
-                await self.startManagedBackend(menuBarController: menuBarController)
-                self.isBackendStarting = false
+            if hasOpenAIKey() {
+                menuBarController.setState("Ready (Caps Lock toggles recording)")
+            } else {
+                menuBarController.setState("Ready: Set OpenAI key from menu")
             }
+            TraceLogger.log("app ready: caps lock trigger armed")
         } else {
             menuBarController.setState("Failed: Accessibility permission missing")
             TraceLogger.log("app startup failed: caps lock trigger not armed")
@@ -58,7 +68,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         disarmBackspaceCancelMonitors()
-        backendManager.stop()
     }
 
     @MainActor
@@ -73,17 +82,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         defer { isHandlingTrigger = false }
 
         TraceLogger.log("caps-trigger callback started")
-
-        if !recordingController.isRecording && apiClient == nil {
-            if isBackendStarting {
-                menuBarController?.setState("Backend starting...")
-                TraceLogger.log("caps-trigger rejected: backend still starting")
-            } else {
-                menuBarController?.setState("Failed: Backend unavailable")
-                TraceLogger.log("caps-trigger rejected: backend unavailable")
-            }
-            return
-        }
 
         if recordingController.isRecording {
             await stopRecordingAndDictate(menuBarController: menuBarController)
@@ -206,11 +204,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
             do {
                 let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
-                guard let apiClient else {
-                    menuBarController?.setState("Failed: Backend unavailable")
-                    TraceLogger.log("dictate skipped: api client unavailable")
-                    return
-                }
                 let dictatedCall = try await apiClient.dictate(
                     DictateRequest(
                         audio_b64: capturedAudio.data.base64EncodedString(),
@@ -222,7 +215,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 )
                 let dictated = dictatedCall.response
                 TraceLogger.log(
-                    "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs.map(String.init) ?? "n/a"), refineMs=\(dictatedCall.refineMs.map(String.init) ?? "n/a"), summary=\(dictated.edit_summary))"
+                    "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs), refineMs=\(dictatedCall.refineMs), summary=\(dictated.edit_summary))"
                 )
                 TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
                 TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
@@ -247,6 +240,52 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
                 TraceLogger.log("dictate failed: \(error)")
             }
+        }
+    }
+
+    private func hasOpenAIKey() -> Bool {
+        guard let key = try? secretStore.getOpenAIKey() else {
+            return false
+        }
+        return !key.isEmpty
+    }
+
+    private func promptForAPIKey(menuBarController: MenuBarController) {
+        let alert = NSAlert()
+        alert.messageText = "Set OpenAI API Key"
+        alert.informativeText = "Paste your API key. It will be stored in your macOS Keychain."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        textField.placeholderString = "sk-..."
+        alert.accessoryView = textField
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else {
+            return
+        }
+
+        let key = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            menuBarController.setState("Failed: API key cannot be empty")
+            return
+        }
+
+        do {
+            try secretStore.setOpenAIKey(key)
+            menuBarController.setState("Saved OpenAI key")
+        } catch {
+            menuBarController.setState("Failed: Could not save OpenAI key")
+        }
+    }
+
+    private func clearAPIKey(menuBarController: MenuBarController) {
+        do {
+            try secretStore.clearOpenAIKey()
+            menuBarController.setState("Cleared OpenAI key")
+        } catch {
+            menuBarController.setState("Failed: Could not clear OpenAI key")
         }
     }
 
@@ -277,47 +316,26 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func dictationFailureMessage(for error: Error) -> String {
-        if let apiError = error as? APIClientError {
-            switch apiError {
-            case let .badStatus(statusCode):
-                return "Dictation request failed (\(statusCode))"
-            case .emptyTranscript:
-                return "STT returned empty transcript"
+        if let dictatorError = error as? DictatorError {
+            switch dictatorError {
+            case .missingApiKey:
+                return "Missing OpenAI key (set from menu)"
+            case .invalidApiKey:
+                return "Invalid OpenAI key"
+            case .networkUnavailable:
+                return "Network unavailable"
+            case let .refinementFailed(reason):
+                return "Refinement failed: \(String(reason.prefix(60)))"
+            case let .sttFailed(reason):
+                return "Speech recognition failed: \(String(reason.prefix(60)))"
+            case let .permissionsDenied(scope):
+                return "Permission denied: \(scope)"
             }
         }
+        if error is APIClientError {
+            return "STT returned empty transcript"
+        }
         return "Dictation request failed"
-    }
-
-    @MainActor
-    private func startManagedBackend(menuBarController: MenuBarController) async {
-        let result = await backendManager.start()
-        switch result {
-        case let .success(baseURL):
-            apiClient = APIClient(baseURL: baseURL)
-            TraceLogger.log("backend manager connected: \(baseURL.absoluteString)")
-            menuBarController.setState("Ready (Caps Lock toggles recording)")
-        case let .failure(error):
-            apiClient = nil
-            TraceLogger.log("backend manager failed: \(error)")
-            menuBarController.setState("Failed: \(Self.backendFailureMessage(for: error))")
-        }
-    }
-
-    private static func backendFailureMessage(for error: BackendServiceManager.BackendError) -> String {
-        switch error {
-        case .repoRootNotFound:
-            return "Backend path not found"
-        case .pythonNotFound:
-            return "Python 3.9+ not found"
-        case let .bootstrapFailed(reason):
-            return "Backend setup failed: \(String(reason.prefix(90)))"
-        case .launchFailed:
-            return "Backend launch failed"
-        case .healthTimeout:
-            return "Backend health timeout"
-        case .exitFailed:
-            return "Backend did not exit cleanly"
-        }
     }
 
     private static func logSafeText(_ text: String) -> String {

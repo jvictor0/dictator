@@ -9,6 +9,8 @@ final class MenuBarController {
 
     private let statusItem: NSStatusItem
     private let stateMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    var onSetAPIKey: (() -> Void)?
+    var onClearAPIKey: (() -> Void)?
 
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -26,6 +28,13 @@ final class MenuBarController {
         let menu = NSMenu()
         stateMenuItem.isEnabled = false
         menu.addItem(stateMenuItem)
+        menu.addItem(NSMenuItem.separator())
+        let setKeyItem = NSMenuItem(title: "Set OpenAI Key…", action: #selector(setOpenAIKey), keyEquivalent: "k")
+        setKeyItem.target = target
+        menu.addItem(setKeyItem)
+        let clearKeyItem = NSMenuItem(title: "Clear OpenAI Key", action: #selector(clearOpenAIKey), keyEquivalent: "")
+        clearKeyItem.target = target
+        menu.addItem(clearKeyItem)
         menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = target
@@ -54,6 +63,16 @@ final class MenuBarController {
             indicator = refiningIndicator
         }
         return "\(statusTitle) \(indicator)"
+    }
+
+    @objc
+    private func setOpenAIKey() {
+        onSetAPIKey?()
+    }
+
+    @objc
+    private func clearOpenAIKey() {
+        onClearAPIKey?()
     }
 
     @objc

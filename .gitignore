@@ -19,9 +19,11 @@ DerivedData/
 # Environment
 .env
 .env.local
+.env~
 
 # Editors
 .vscode/
 .idea/
 
 .swiftpm-module-cache/
+apps/macos-client/models/

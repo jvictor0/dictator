@@ -1,5 +1,13 @@
 # Roadmap (Execution Slices)
 
+## Direction Update (Unified Swift Core)
+
+Current implementation direction is a single Swift codebase with shared `DictatorCore` used by:
+- macOS caps-lock wrapper app
+- iOS host + keyboard wrappers
+
+Legacy backend-oriented slice notes below remain as historical sequencing context.
+
 ## Goal
 
 Deliver Dictator in small vertical slices that are testable end-to-end.

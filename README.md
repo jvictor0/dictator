@@ -1,12 +1,12 @@
 # Dictator
 
-Dictator is a macOS menubar dictation app bootstrap with a multi-agent development workflow.
+Dictator is a unified Swift dictation codebase with platform wrappers for macOS and iOS.
 
 ## What this repo contains
 
-- `apps/macos-client`: Swift menubar client scaffold (record toggle, API wiring, clipboard paste fallback)
-- `services/orchestrator`: FastAPI scaffold for STT + LLM refinement pipeline
-- `contracts`: API contract source of truth
+- `apps/macos-client`: Swift menubar app + shared `DictatorCore` Swift module
+- `apps/ios-keyboard`: iOS host/keyboard wrapper scaffold sharing `DictatorCore`
+- `contracts`: language-agnostic contract source of truth
 - `prompts`: Prompt templates for transcript refinement
 - `skills`: Four role skills (`architect`, `implementer`, `reviewer`, `tester`)
 - `docs`: Governance, architecture, testing, and product docs
@@ -14,14 +14,7 @@ Dictator is a macOS menubar dictation app bootstrap with a multi-agent developme
 ## Quick start
 
 1. Copy `.env.example` to `.env` and set keys.
-2. Start backend:
-   - `cd services/orchestrator`
-   - `python -m venv .venv && source .venv/bin/activate`
-   - `pip install -e .[dev]`
-   - `uvicorn app.main:app --reload`
-3. Run backend tests:
-   - `pytest`
-4. Build/test macOS scaffold:
+2. Build/test macOS app + shared core:
    - `cd apps/macos-client`
    - `swift build`
    - `swift test`
