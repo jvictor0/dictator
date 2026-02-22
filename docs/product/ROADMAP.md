@@ -136,6 +136,109 @@ Deliver Dictator in small vertical slices that are testable end-to-end.
 
 - Test evidence showing raw vs revised output and expected insertion result.
 
+## Slice 6: Active target context for refinement
+
+### Scope
+
+- Capture the active app target when recording starts.
+- Include target context in dictation requests (app name; browser site host when available).
+- Provide dynamic context sentence for refinement, for example:
+  - "You are currently dictating into Codex."
+  - "You are currently dictating into Chrome, website google.com."
+  - "You are currently dictating into Slack."
+- If active target appears to be a coding agent (`Codex` or `Cursor` by string containment), include:
+  - "You are talking to a coding agent."
+- Use the captured context during transcript refinement to improve intent reconstruction.
+
+### Out of scope
+
+- Persistent per-app memory across sessions
+- Deep editor-specific AST or project awareness
+
+### Acceptance criteria
+
+- Dictation request includes optional context derived from active app at recording start.
+- Browser targets include site host when available (best effort).
+- Coding-agent hint is present when active app matches `Codex` or `Cursor`.
+- Refinement prompt/input consumes the context so output can adapt to target environment.
+- Unit tests cover context generation and refinement input wiring.
+
+### Risks to manage
+
+- Browser URL detection may fail due to automation permissions or no open tab.
+- Frontmost app can change between recording start and stop; system should use the captured start context.
+
+### Exit artifact
+
+- Test evidence showing context payload values and refinement behavior with coding-agent hint.
+
+## Slice 7: Selected-text transform via spoken instruction
+
+### Scope
+
+- Keep existing Caps Lock dictation behavior when no text is selected.
+- Add selected-text mode:
+  - If text is selected when recording starts, capture the selected text.
+  - Continue recording voice as usual.
+  - Use transcript as modification request and selected text as source input.
+- Refinement prompt supports two modes:
+  - transcript cleanup (default),
+  - selected-text transform (when selected text is present in context).
+
+### Out of scope
+
+- Multi-turn editing memory
+- Non-text binary document transformations
+
+### Acceptance criteria
+
+- With no selected text, behavior is unchanged from current dictation/refinement flow.
+- With selected text, backend receives selected text context and transcript request.
+- Refiner applies request to selected text using a prompt equivalent to:
+  - "Take the following input and modify it based on the following request."
+- Output inserts transformed text at cursor/selection target.
+- Tests cover selected-text prompt composition and no-regression behavior.
+
+### Risks to manage
+
+- Selected text capture depends on clipboard + synthetic copy sequence.
+- Some target apps may block copy/read operations without focused editable selection.
+
+### Exit artifact
+
+- Manual evidence of both paths:
+  - no-selection transcript refinement,
+  - selection transform with spoken instruction.
+
+## Slice 8: Recording guardrails and cancel controls
+
+### Scope
+
+- Do not start recording unless an editable text input is currently focused.
+- While recording, pressing Backspace cancels recording and discards captured audio.
+- If STT transcript is empty, skip refinement/OpenAI call and perform no insertion.
+
+### Out of scope
+
+- Complex app-specific focus heuristics beyond accessibility role/editable checks.
+- Partial transcript buffering after cancel.
+
+### Acceptance criteria
+
+- Caps Lock start attempt outside text input shows non-recording status and does not capture audio.
+- Backspace during recording exits recording state without calling `/v1/dictate` or inserting text.
+- Empty STT result returns empty dictate output and bypasses refinement call.
+- Tests cover focus-role logic and empty-transcript short-circuit behavior.
+
+### Risks to manage
+
+- Focus detection may vary by host app accessibility metadata.
+- Backspace key may still perform host-app deletion in parallel with cancellation.
+
+### Exit artifact
+
+- Manual evidence for all three guardrails with logs showing canceled and skipped paths.
+
 ## Sequencing and dependencies
 
 - Slice 1 is prerequisite for Slice 2 and Slice 3.
@@ -143,6 +246,9 @@ Deliver Dictator in small vertical slices that are testable end-to-end.
 - Slice 3 validates record-state UX and toggle control loop.
 - Slice 4 depends on Slice 3 recording flow.
 - Slice 5 depends on Slice 4 transcript availability.
+- Slice 6 depends on Slice 5 refinement path and uses Slice 3 recording state transitions.
+- Slice 7 depends on Slice 5 refinement and reuses Slice 2 clipboard insertion mechanics.
+- Slice 8 depends on Slice 3 recording state transitions and Slice 5 refinement flow.
 
 ## Definition of done per slice
 

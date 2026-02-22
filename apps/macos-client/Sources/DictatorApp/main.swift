@@ -1,15 +1,23 @@
 import AppKit
 
 final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
+    private static let backspaceKeyCode: UInt16 = 51
+    private static let cancelDebounceSeconds: TimeInterval = 0.15
+
     private var menuBarController: MenuBarController?
     private var capsLockTriggerController: CapsLockTriggerController?
+    private var backspaceGlobalMonitor: Any?
+    private var backspaceLocalMonitor: Any?
     private let recordingController = RecordingController()
     private let audioRecorder = AudioRecorder()
     private let backendManager = BackendServiceManager()
+    private let activeTargetContextProvider = ActiveTargetContextProvider()
     private var apiClient: APIClient?
     private let sessionID = UUID().uuidString
     private var isHandlingTrigger = false
     private var isBackendStarting = false
+    private var recordingContext: [String: String]?
+    private var lastCancelTimestamp: TimeInterval?
 
     override init() {
         super.init()
@@ -33,6 +41,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         self.capsLockTriggerController = triggerController
+        armBackspaceCancelMonitors()
         if triggerController.start() {
             menuBarController.setState("Starting backend...")
             TraceLogger.log("app ready: caps lock trigger armed")
@@ -48,6 +57,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        disarmBackspaceCancelMonitors()
         backendManager.stop()
     }
 
@@ -87,14 +97,91 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.setState("Starting recording...")
         switch await audioRecorder.start() {
         case .success:
+            var context = activeTargetContextProvider.captureContext() ?? [:]
+
+            switch ClipboardInserter.captureSelectedText() {
+            case let .success(selectedText):
+                if let selectedText {
+                    context["selected_text"] = selectedText
+                    TraceLogger.log("captured selected text (chars=\(selectedText.count))")
+                } else {
+                    TraceLogger.log("captured selected text: <none>")
+                }
+            case let .failure(error):
+                TraceLogger.log("selected text capture failed: \(error)")
+            }
+
+            recordingContext = context.isEmpty ? nil : context
+            if let dictationContext = recordingContext?["dictation_context"] {
+                TraceLogger.log("captured recording context: \(dictationContext)")
+            } else {
+                TraceLogger.log("captured recording context: unavailable")
+            }
             _ = recordingController.toggle()
             menuBarController?.setIndicatorState(.recording)
             menuBarController?.setState("Recording")
             TraceLogger.log("recording started")
         case let .failure(error):
+            recordingContext = nil
             menuBarController?.setIndicatorState(.idle)
             menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
             TraceLogger.log("recording start failed: \(error)")
+        }
+    }
+
+    @MainActor
+    private func cancelRecording(menuBarController: MenuBarController?) {
+        guard recordingController.isRecording else {
+            return
+        }
+
+        _ = recordingController.toggle()
+        recordingContext = nil
+        _ = audioRecorder.stop()
+        menuBarController?.setIndicatorState(.idle)
+        menuBarController?.setState("Recording canceled")
+        TraceLogger.log("recording canceled via backspace")
+    }
+
+    private func armBackspaceCancelMonitors() {
+        backspaceGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleBackspaceCancel(event: event, source: "global")
+        }
+        backspaceLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleBackspaceCancel(event: event, source: "local")
+            return event
+        }
+        TraceLogger.log(
+            "backspace-cancel monitors armed (global=\(backspaceGlobalMonitor != nil), local=\(backspaceLocalMonitor != nil))"
+        )
+    }
+
+    private func disarmBackspaceCancelMonitors() {
+        if let backspaceGlobalMonitor {
+            NSEvent.removeMonitor(backspaceGlobalMonitor)
+            self.backspaceGlobalMonitor = nil
+        }
+        if let backspaceLocalMonitor {
+            NSEvent.removeMonitor(backspaceLocalMonitor)
+            self.backspaceLocalMonitor = nil
+        }
+        TraceLogger.log("backspace-cancel monitors removed")
+    }
+
+    private func handleBackspaceCancel(event: NSEvent, source: String) {
+        guard event.type == .keyDown, event.keyCode == Self.backspaceKeyCode else {
+            return
+        }
+        guard recordingController.isRecording else {
+            return
+        }
+        if let lastCancelTimestamp, (event.timestamp - lastCancelTimestamp) <= Self.cancelDebounceSeconds {
+            return
+        }
+        lastCancelTimestamp = event.timestamp
+        TraceLogger.log("recording cancel trigger fired via backspace (source=\(source))")
+        Task { @MainActor in
+            self.cancelRecording(menuBarController: self.menuBarController)
         }
     }
 
@@ -111,6 +198,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             TraceLogger.log("recording stop failed: \(error)")
             return
         case let .success(capturedAudio):
+            let requestContext = recordingContext
+            recordingContext = nil
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
             menuBarController?.setIndicatorState(.refining)
             menuBarController?.setState("Transcribing + refining...")
@@ -127,7 +216,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                         audio_b64: capturedAudio.data.base64EncodedString(),
                         sample_rate: capturedAudio.sampleRate,
                         locale: locale,
-                        session_id: sessionID
+                        session_id: sessionID,
+                        optional_context: requestContext
                     )
                 )
                 let dictated = dictatedCall.response
@@ -136,6 +226,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 )
                 TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
                 TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
+                if dictated.revised_text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    menuBarController?.setIndicatorState(.idle)
+                    menuBarController?.setState("No speech detected")
+                    TraceLogger.log("dictate produced empty revised text; skipping insertion")
+                    return
+                }
                 let insertResult = ClipboardInserter.insert(dictated.revised_text)
                 switch insertResult {
                 case .success:

@@ -1,3 +1,7 @@
+import logging
+import time
+from typing import Optional
+
 from app.core.config import settings
 from app.models.contracts import (
     DictateRequest,
@@ -11,8 +15,8 @@ from app.services.llm.base import LLMProvider
 from app.services.llm.openai_refiner import OpenAIRefiner
 from app.services.stt.base import STTProvider
 from app.services.stt.whisper_local import WhisperLocalProvider
-from typing import Optional
-import time
+
+logger = logging.getLogger(__name__)
 
 
 class DictationPipeline:
@@ -48,6 +52,18 @@ class DictationPipeline:
             )
         )
         transcribe_ms = int((time.perf_counter() - transcribe_started) * 1000)
+        if not t.raw_transcript.strip():
+            logger.info("Transcription returned empty text; skipping refinement")
+            return (
+                DictateResponse(
+                    raw_transcript="",
+                    revised_text="",
+                    edit_summary="Transcription empty; skipped refinement.",
+                    uncertainty_flags=["empty_transcript_skipped_refinement"],
+                ),
+                transcribe_ms,
+                0,
+            )
         refine_started = time.perf_counter()
         try:
             r = self.refine(
@@ -61,6 +77,11 @@ class DictationPipeline:
         except Exception as exc:
             refine_ms = int((time.perf_counter() - refine_started) * 1000)
             if settings.refinement_fallback_mode == "use_raw":
+                logger.warning(
+                    "Refinement failed, using raw transcript fallback (refine_ms=%s, error=%s)",
+                    refine_ms,
+                    str(exc)[:220],
+                )
                 return (
                     DictateResponse(
                         raw_transcript=t.raw_transcript,
@@ -71,6 +92,11 @@ class DictationPipeline:
                     transcribe_ms,
                     refine_ms,
                 )
+            logger.error(
+                "Refinement failed with fail_closed mode (refine_ms=%s, error=%s)",
+                refine_ms,
+                str(exc)[:220],
+            )
             raise RuntimeError(f"Refinement failed and fallback mode is fail_closed: {exc}") from exc
         return (
             DictateResponse(

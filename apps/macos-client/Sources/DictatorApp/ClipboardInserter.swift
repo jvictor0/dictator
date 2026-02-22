@@ -8,6 +8,8 @@ public enum ClipboardInserter {
         case keyEventSynthesisFailed
     }
 
+    private static let selectedTextLimit = 12000
+
     struct PasteboardSnapshot {
         let items: [NSPasteboardItem]
     }
@@ -69,5 +71,50 @@ public enum ClipboardInserter {
         }
 
         return .success(())
+    }
+
+    public static func captureSelectedText() -> Result<String?, InsertError> {
+        guard AXIsProcessTrusted() else {
+            return .failure(.accessibilityPermissionMissing)
+        }
+
+        let pb = NSPasteboard.general
+        let priorClipboard = snapshot(pb)
+
+        guard synthesizeCommandKey(virtualKey: 8) else {
+            return .failure(.keyEventSynthesisFailed)
+        }
+
+        Thread.sleep(forTimeInterval: 0.08)
+        let selected = normalizedSelectedText(pb.string(forType: .string))
+        _ = restore(priorClipboard, to: pb)
+        return .success(selected)
+    }
+
+    static func normalizedSelectedText(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        if trimmed.count <= selectedTextLimit {
+            return trimmed
+        }
+        return String(trimmed.prefix(selectedTextLimit))
+    }
+
+    private static func synthesizeCommandKey(virtualKey: CGKeyCode) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false) else {
+            return false
+        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        return true
     }
 }

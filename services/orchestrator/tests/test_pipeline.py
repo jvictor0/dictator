@@ -32,10 +32,34 @@ class FakeLLMProvider(LLMProvider):
         )
 
 
+class SpyLLMProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.called = False
+
+    def refine(self, req: RefineRequest) -> RefineResponse:
+        self.called = True
+        return RefineResponse(
+            revised_text=req.raw_transcript,
+            edit_summary="Spy",
+            uncertainty_flags=[],
+        )
+
+
 class FailingLLMProvider(LLMProvider):
     def refine(self, req: RefineRequest) -> RefineResponse:
         _ = req
         raise RuntimeError("provider outage")
+
+
+class EmptySTTProvider(STTProvider):
+    def transcribe(self, req: TranscribeRequest) -> TranscribeResponse:
+        _ = req
+        return TranscribeResponse(
+            raw_transcript="   ",
+            segments=[],
+            confidence=0.0,
+            duration_ms=1000,
+        )
 
 
 def test_transcribe_returns_expected_shape() -> None:
@@ -101,3 +125,20 @@ def test_dictate_fail_closed_raises(monkeypatch) -> None:
                 session_id="s4",
             )
         )
+
+
+def test_dictate_empty_transcript_skips_refinement() -> None:
+    spy = SpyLLMProvider()
+    pipeline = DictationPipeline(stt_provider=EmptySTTProvider(), llm_provider=spy)
+    out = pipeline.dictate(
+        DictateRequest(
+            audio_b64="ZmFrZQ==",
+            sample_rate=16000,
+            locale="en-US",
+            session_id="s5",
+        )
+    )
+    assert out.raw_transcript == ""
+    assert out.revised_text == ""
+    assert "empty_transcript_skipped_refinement" in out.uncertainty_flags
+    assert spy.called is False

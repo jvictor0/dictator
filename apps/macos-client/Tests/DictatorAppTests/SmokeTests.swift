@@ -130,4 +130,50 @@ final class SmokeTests: XCTestCase {
         XCTAssertEqual(decoded.raw_transcript, "hello world")
         XCTAssertEqual(decoded.segments.count, 1)
     }
+
+    func testActiveTargetHostExtractionStripsWWWPrefix() {
+        XCTAssertEqual(ActiveTargetContextProvider.host(from: "https://www.google.com/search?q=test"), "google.com")
+        XCTAssertEqual(ActiveTargetContextProvider.host(from: "https://docs.github.com/en"), "docs.github.com")
+        XCTAssertNil(ActiveTargetContextProvider.host(from: "not-a-url"))
+    }
+
+    func testCodingAgentDetectionByStringContainment() {
+        XCTAssertTrue(ActiveTargetContextProvider.isCodingAgent(appName: "Codex", bundleID: "com.example.codex"))
+        XCTAssertTrue(ActiveTargetContextProvider.isCodingAgent(appName: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92"))
+        XCTAssertFalse(ActiveTargetContextProvider.isCodingAgent(appName: "Slack", bundleID: "com.tinyspeck.slackmacgap"))
+    }
+
+    func testDictationContextSentenceIncludesCodingAgentHint() {
+        let codingAgentText = ActiveTargetContextProvider.dictationContextSentence(
+            appName: "Codex",
+            siteHost: nil,
+            isCodingAgent: true
+        )
+        XCTAssertEqual(codingAgentText, "You are currently dictating into Codex. You are talking to a coding agent.")
+
+        let browserText = ActiveTargetContextProvider.dictationContextSentence(
+            appName: "Google Chrome",
+            siteHost: "google.com",
+            isCodingAgent: false
+        )
+        XCTAssertEqual(browserText, "You are currently dictating into Google Chrome, website google.com.")
+    }
+
+    func testClipboardNormalizedSelectedText() {
+        XCTAssertNil(ClipboardInserter.normalizedSelectedText(nil))
+        XCTAssertNil(ClipboardInserter.normalizedSelectedText("   \n"))
+        XCTAssertEqual(ClipboardInserter.normalizedSelectedText("  hello world  "), "hello world")
+    }
+
+    func testClipboardNormalizedSelectedTextTruncatesLargePayload() {
+        let raw = String(repeating: "a", count: 13000)
+        let normalized = ClipboardInserter.normalizedSelectedText(raw)
+        XCTAssertEqual(normalized?.count, 12000)
+    }
+
+    func testFocusedInputRoleDetection() {
+        XCTAssertTrue(FocusedInputDetector.isTextInputRole(role: kAXTextFieldRole as String, editableAttribute: nil))
+        XCTAssertTrue(FocusedInputDetector.isTextInputRole(role: "AXUnknown", editableAttribute: true))
+        XCTAssertFalse(FocusedInputDetector.isTextInputRole(role: kAXButtonRole as String, editableAttribute: nil))
+    }
 }
