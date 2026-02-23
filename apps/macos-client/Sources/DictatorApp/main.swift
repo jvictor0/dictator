@@ -34,7 +34,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private let secretStore = KeychainSecretStore()
     private lazy var coreClient: any DictatorCoreClient = PipelineOrchestrator(
         sttEngine: WhisperCPPBridgeSTTEngine(),
-        refinementEngine: OpenAIRefinementEngine(secretStore: secretStore)
+        refinementEngine: makeRefinementEngine()
     )
     private lazy var apiClient: APIClient = APIClient(coreClient: coreClient)
 
@@ -46,6 +46,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var launchpadPageController: LaunchpadPageController?
     private var launchpadRenderWorker: LaunchpadColorRenderWorker?
     private var launchpadInvalidationBus: RenderInvalidationBus?
+    private var managedOllamaProcess: Process?
     private var isRelaunching = false
     private let dictationStateLock = NSLock()
     private var dictationState: DictationState = .idle
@@ -74,6 +75,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             self?.clearAPIKey(menuBarController: menuBarController)
         }
         self.menuBarController = menuBarController
+        bootstrapOllamaIfNeeded()
 
         let triggerController = CapsLockTriggerController { [weak menuBarController, weak self] in
             guard let self else {
@@ -87,11 +89,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         self.capsLockTriggerController = triggerController
         armBackspaceCancelMonitors()
         if triggerController.start() {
-            if hasOpenAIKey() {
-                menuBarController.setState("Ready (Caps Lock or Launchpad 0,0 toggles recording)")
-            } else {
-                menuBarController.setState("Ready: Set OpenAI key from menu")
-            }
+            menuBarController.setState(startupReadyMessage())
             TraceLogger.log("app ready: caps lock trigger armed")
         } else {
             menuBarController.setState("Failed: Accessibility permission missing")
@@ -103,6 +101,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         disarmBackspaceCancelMonitors()
+        managedOllamaProcess?.terminate()
+        managedOllamaProcess = nil
         launchpadRenderWorker?.stop()
         launchpadMIDIManager?.stop()
     }
@@ -309,10 +309,50 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         return secretStore.hasOpenAIKeyWithoutPrompt()
     }
 
+    private func makeRefinementEngine() -> any RefinementEngine {
+        let configuration = LLMRuntimeConfiguration.fromEnvironment()
+        let ollama = OllamaRefinementEngine(
+            host: configuration.ollamaHost,
+            model: configuration.ollamaModel
+        )
+        let openAI = OpenAIRefinementEngine(
+            model: configuration.openAIModel,
+            secretStore: secretStore
+        )
+        return ProviderRoutingRefinementEngine(
+            configuration: configuration,
+            ollamaEngine: ollama,
+            openAIEngine: openAI,
+            canUseOpenAI: { [weak self] in
+                self?.hasOpenAIKey() ?? false
+            }
+        )
+    }
+
+    private func startupReadyMessage() -> String {
+        let base = "Ready (Caps Lock or Launchpad 0,0 toggles recording)"
+        let configuration = LLMRuntimeConfiguration.fromEnvironment()
+        switch configuration.provider {
+        case .openai:
+            if hasOpenAIKey() {
+                return "\(base) [OpenAI]"
+            }
+            return "Ready: Set OpenAI key from menu or .env [OpenAI]"
+        case .ollama:
+            if configuration.fallback == .openai {
+                if hasOpenAIKey() {
+                    return "\(base) [Ollama primary, OpenAI fallback]"
+                }
+                return "\(base) [Ollama primary, OpenAI fallback unavailable: key missing]"
+            }
+            return "\(base) [Ollama]"
+        }
+    }
+
     private func promptForAPIKey(menuBarController: MenuBarController) {
         let alert = NSAlert()
-        alert.messageText = "Set OpenAI API Key"
-        alert.informativeText = "Paste your API key. It will be stored in your macOS Keychain."
+        alert.messageText = "Set OpenAI API Key (Fallback)"
+        alert.informativeText = "Paste your API key. It will be stored in your macOS Keychain and used for optional fallback."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
 
@@ -333,7 +373,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             try secretStore.setOpenAIKey(key)
-            menuBarController.setState("Saved OpenAI key")
+            menuBarController.setState("Saved OpenAI fallback key")
         } catch {
             menuBarController.setState("Failed: Could not save OpenAI key")
         }
@@ -342,7 +382,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private func clearAPIKey(menuBarController: MenuBarController) {
         do {
             try secretStore.clearOpenAIKey()
-            menuBarController.setState("Cleared OpenAI key")
+            menuBarController.setState("Cleared OpenAI fallback key")
         } catch {
             menuBarController.setState("Failed: Could not clear OpenAI key")
         }
@@ -378,7 +418,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         if let dictatorError = error as? DictatorError {
             switch dictatorError {
             case .missingApiKey:
-                return "Missing OpenAI key (set from menu)"
+                return "Missing OpenAI key (set from menu or .env)"
             case .invalidApiKey:
                 return "Invalid OpenAI key"
             case .networkUnavailable:
@@ -525,6 +565,21 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         renderWorker.start()
         midiManager.start()
+    }
+
+    private func bootstrapOllamaIfNeeded() {
+        let configuration = LLMRuntimeConfiguration.fromEnvironment()
+        switch OllamaBootstrapper.ensureRunningIfNeeded(configuration: configuration) {
+        case .notRequired:
+            TraceLogger.log("ollama bootstrap skipped (provider=\(configuration.provider.rawValue), host=\(configuration.ollamaHost))")
+        case .alreadyRunning:
+            TraceLogger.log("ollama bootstrap: already running")
+        case let .started(process):
+            managedOllamaProcess = process
+            TraceLogger.log("ollama bootstrap: started local serve process")
+        case let .startFailed(reason):
+            TraceLogger.log("ollama bootstrap failed: \(reason)")
+        }
     }
 
     @MainActor

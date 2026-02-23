@@ -17,9 +17,41 @@ Swift menubar scaffold for Dictator.
 - Empty STT transcript path skips refinement and insertion
 - Insertion path uses clipboard + synthetic `Cmd+V` and restores prior clipboard contents
 - Menubar status line reports explicit failures (permission missing, STT/refinement failure, insertion failure, missing API key)
-- OpenAI key is managed from menubar menu (`Set OpenAI Key…`, `Clear OpenAI Key`) and stored in macOS Keychain
-- App auto-loads `.env` from current directory or parent directories at launch; API key resolution is `.env`/environment first, then Keychain fallback
+- Refinement defaults to local Ollama (`qwen2.5:7b-instruct`) and can optionally fall back to OpenAI
+- OpenAI key is managed from menubar menu (`Set OpenAI Key (Fallback)…`, `Clear OpenAI Key (Fallback)`) and stored in macOS Keychain
+- App auto-loads `.env` from current directory or parent directories at launch for runtime provider selection and model settings
 - Menubar menu includes `Quit`
+
+## Local AI runtime (Ollama + Qwen)
+
+1. Install Ollama (Homebrew or official installer).
+2. Start Ollama (`ollama serve`) or launch the Ollama app.
+3. Pull the default model:
+   - `ollama pull qwen2.5:7b-instruct`
+4. Smoke test:
+   - `ollama run qwen2.5:7b-instruct "hello"`
+
+Environment variables for refinement provider:
+
+- `DICTATOR_LLM_PROVIDER`: `ollama` (default) or `openai`
+- `DICTATOR_OLLAMA_HOST`: default `http://127.0.0.1:11434`
+- `DICTATOR_OLLAMA_MODEL`: default `qwen2.5:7b-instruct`
+- `DICTATOR_LLM_FALLBACK`: `openai` (default) or `none`
+- `OPENAI_API_KEY` / `DICTATOR_OPENAI_API_KEY`: optional, used when fallback is `openai`
+- `OPENAI_MODEL`: OpenAI model for fallback/default OpenAI provider (default `gpt-4.1-mini`)
+
+Example local-first configuration:
+
+```bash
+DICTATOR_LLM_PROVIDER=ollama
+DICTATOR_OLLAMA_HOST=http://127.0.0.1:11434
+DICTATOR_OLLAMA_MODEL=qwen2.5:7b-instruct
+DICTATOR_LLM_FALLBACK=openai
+```
+
+Privacy note: when fallback is `openai` and a valid OpenAI key is configured, transcripts may be sent to OpenAI if local refinement fails.
+
+Startup behavior: when `DICTATOR_LLM_PROVIDER=ollama` and `DICTATOR_OLLAMA_HOST` points to loopback (`localhost`/`127.0.0.1`), the app attempts to auto-start `ollama serve` if it is not already reachable.
 
 ## STT runtime (whisper.cpp)
 

@@ -36,6 +36,37 @@ final class PipelineTests: XCTestCase {
         XCTAssertFalse(didRun)
     }
 
+    func testDictateWithProviderRouterStillSkipsRefinementOnEmptyTranscript() async throws {
+        let ollama = CountingRefinementEngine(result: .success(.init(revised_text: "local", edit_summary: "ollama", uncertainty_flags: [])))
+        let openAI = CountingRefinementEngine(result: .success(.init(revised_text: "remote", edit_summary: "openai", uncertainty_flags: [])))
+        let router = ProviderRoutingRefinementEngine(
+            configuration: .init(
+                provider: .ollama,
+                ollamaHost: "http://127.0.0.1:11434",
+                ollamaModel: "qwen2.5:7b-instruct",
+                fallback: .openai,
+                openAIModel: "gpt-4.1-mini"
+            ),
+            ollamaEngine: ollama,
+            openAIEngine: openAI,
+            canUseOpenAI: { true }
+        )
+        let client = PipelineOrchestrator(
+            sttEngine: StubSTTEngine(response: TranscribeResponse(raw_transcript: " ", segments: [], confidence: 0.0, duration_ms: 0)),
+            refinementEngine: router
+        )
+
+        let output = try await client.dictate(
+            DictateRequest(audio_b64: Data().base64EncodedString(), sample_rate: 16000, locale: "en-US", session_id: "s")
+        )
+
+        XCTAssertEqual(output.response.revised_text, "")
+        let ollamaCalls = await ollama.calls()
+        let openAICalls = await openAI.calls()
+        XCTAssertEqual(ollamaCalls, 0)
+        XCTAssertEqual(openAICalls, 0)
+    }
+
     func testOpenAIInputBuildsSelectedTextMode() {
         let built = OpenAIRefinementEngine.buildInput(
             rawTranscript: "make it friendlier",
@@ -78,5 +109,23 @@ private actor StubRefinementEngine: RefinementEngine {
 
     func didRun() -> Bool {
         hasRun
+    }
+}
+
+private actor CountingRefinementEngine: RefinementEngine {
+    let result: Result<RefineResponse, Error>
+    private var callCount = 0
+
+    init(result: Result<RefineResponse, Error>) {
+        self.result = result
+    }
+
+    func refine(_ request: RefineRequest) async throws -> RefineResponse {
+        callCount += 1
+        return try result.get()
+    }
+
+    func calls() -> Int {
+        callCount
     }
 }

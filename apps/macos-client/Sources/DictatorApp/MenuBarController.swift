@@ -46,10 +46,10 @@ final class MenuBarController {
         menu.addItem(stateMenuItem)
         menu.addItem(launchpadStatusMenuItem)
         menu.addItem(NSMenuItem.separator())
-        let setKeyItem = NSMenuItem(title: "Set OpenAI Key…", action: #selector(setOpenAIKey), keyEquivalent: "k")
+        let setKeyItem = NSMenuItem(title: "Set OpenAI Key (Fallback)…", action: #selector(setOpenAIKey), keyEquivalent: "k")
         setKeyItem.target = target
         menu.addItem(setKeyItem)
-        let clearKeyItem = NSMenuItem(title: "Clear OpenAI Key", action: #selector(clearOpenAIKey), keyEquivalent: "")
+        let clearKeyItem = NSMenuItem(title: "Clear OpenAI Key (Fallback)", action: #selector(clearOpenAIKey), keyEquivalent: "")
         clearKeyItem.target = target
         menu.addItem(clearKeyItem)
         menu.addItem(NSMenuItem.separator())
