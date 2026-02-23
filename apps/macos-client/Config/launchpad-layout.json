@@ -1,0 +1,96 @@
+{
+  "initial_page_id": "arrows",
+  "pages": [
+    {
+      "id": "arrows",
+      "pads": [
+        {
+          "x": 0,
+          "y": 7,
+          "role": "record_status",
+          "color": { "r": 255, "g": 255, "b": 255 },
+          "action": { "type": "dictation", "command": "toggle" }
+        },
+        {
+          "x": -1,
+          "y": 7,
+          "color": { "r": 255, "g": 0, "b": 255 },
+          "action": { "type": "app_reload" }
+        },
+        {
+          "x": 4,
+          "y": 7,
+          "color": { "r": 255, "g": 255, "b": 255 },
+          "action": { "type": "keystroke", "key": "space" }
+        },
+        {
+          "x": 5,
+          "y": 6,
+          "role": "shift_latch",
+          "color": { "r": 255, "g": 220, "b": 0 },
+          "action": { "type": "modifier_latch", "modifier": "shift" }
+        },
+        {
+          "x": 4,
+          "y": 4,
+          "color": { "r": 50, "g": 160, "b": 80 },
+          "action": { "type": "keystroke", "key": "c", "modifiers": ["command"] }
+        },
+        {
+          "x": 5,
+          "y": 4,
+          "color": { "r": 40, "g": 180, "b": 90 },
+          "action": { "type": "keystroke", "key": "v", "modifiers": ["command"] }
+        },
+        {
+          "x": 6,
+          "y": 4,
+          "color": { "r": 35, "g": 200, "b": 95 },
+          "action": { "type": "keystroke", "key": "x", "modifiers": ["command"] }
+        },
+        {
+          "x": 7,
+          "y": 4,
+          "color": { "r": 30, "g": 220, "b": 100 },
+          "action": { "type": "keystroke", "key": "z", "modifiers": ["command"] }
+        },
+        {
+          "x": 5,
+          "y": 7,
+          "color": { "r": 0, "g": 255, "b": 255 },
+          "action": { "type": "keystroke", "key": "left" }
+        },
+        {
+          "x": 6,
+          "y": 7,
+          "color": { "r": 0, "g": 255, "b": 255 },
+          "action": { "type": "keystroke", "key": "down" }
+        },
+        {
+          "x": 7,
+          "y": 7,
+          "color": { "r": 0, "g": 255, "b": 255 },
+          "action": { "type": "keystroke", "key": "right" }
+        },
+        {
+          "x": 6,
+          "y": 6,
+          "color": { "r": 0, "g": 255, "b": 255 },
+          "action": { "type": "keystroke", "key": "up" }
+        },
+        {
+          "x": 7,
+          "y": 6,
+          "color": { "r": 200, "g": 0, "b": 255 },
+          "action": { "type": "keystroke", "key": "enter" }
+        },
+        {
+          "x": 7,
+          "y": 5,
+          "color": { "r": 255, "g": 120, "b": 0 },
+          "action": { "type": "contextual_backspace" }
+        }
+      ]
+    }
+  ]
+}

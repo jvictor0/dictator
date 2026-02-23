@@ -12,7 +12,7 @@ public final class OpenAIRefinementEngine: RefinementEngine {
     }
 
     public func refine(_ request: RefineRequest) async throws -> RefineResponse {
-        guard let key = try secretStore.getOpenAIKey(), !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let key = try APIKeyResolver.resolve(fallback: { try secretStore.getOpenAIKey() }) else {
             throw DictatorError.missingApiKey
         }
 

@@ -1,5 +1,6 @@
 import DictatorCore
 import Foundation
+import LocalAuthentication
 import Security
 
 final class KeychainSecretStore: SecretStore {
@@ -31,6 +32,32 @@ final class KeychainSecretStore: SecretStore {
             return nil
         }
         return key
+    }
+
+    func hasOpenAIKeyWithoutPrompt() -> Bool {
+        var query = baseQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let authContext = LAContext()
+        authContext.interactionNotAllowed = true
+        query[kSecUseAuthenticationContext as String] = authContext
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data,
+                  let key = String(data: data, encoding: .utf8)
+            else {
+                return false
+            }
+            return !key.isEmpty
+        case errSecInteractionNotAllowed:
+            // Key exists but would require UI; treat as present to avoid startup prompt churn.
+            return true
+        default:
+            return false
+        }
     }
 
     func setOpenAIKey(_ key: String) throws {

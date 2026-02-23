@@ -18,6 +18,7 @@ Swift menubar scaffold for Dictator.
 - Insertion path uses clipboard + synthetic `Cmd+V` and restores prior clipboard contents
 - Menubar status line reports explicit failures (permission missing, STT/refinement failure, insertion failure, missing API key)
 - OpenAI key is managed from menubar menu (`Set OpenAI Key…`, `Clear OpenAI Key`) and stored in macOS Keychain
+- App auto-loads `.env` from current directory or parent directories at launch; API key resolution is `.env`/environment first, then Keychain fallback
 - Menubar menu includes `Quit`
 
 ## STT runtime (whisper.cpp)

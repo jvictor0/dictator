@@ -9,14 +9,20 @@ final class MenuBarController {
 
     private let statusItem: NSStatusItem
     private let stateMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let launchpadStatusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     var onSetAPIKey: (() -> Void)?
     var onClearAPIKey: (() -> Void)?
 
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.menu = Self.makeMenu(stateMenuItem: stateMenuItem, target: self)
+        statusItem.menu = Self.makeMenu(
+            stateMenuItem: stateMenuItem,
+            launchpadStatusMenuItem: launchpadStatusMenuItem,
+            target: self
+        )
         setIndicatorState(.idle)
         setState("Ready")
+        setLaunchpadStatus("Initializing")
     }
 
     static let statusTitle = "🫡"
@@ -25,9 +31,20 @@ final class MenuBarController {
     static let refiningIndicator = "🔵"
 
     static func makeMenu(stateMenuItem: NSMenuItem, target: AnyObject) -> NSMenu {
+        let launchpadStatusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        return makeMenu(
+            stateMenuItem: stateMenuItem,
+            launchpadStatusMenuItem: launchpadStatusMenuItem,
+            target: target
+        )
+    }
+
+    static func makeMenu(stateMenuItem: NSMenuItem, launchpadStatusMenuItem: NSMenuItem, target: AnyObject) -> NSMenu {
         let menu = NSMenu()
         stateMenuItem.isEnabled = false
+        launchpadStatusMenuItem.isEnabled = false
         menu.addItem(stateMenuItem)
+        menu.addItem(launchpadStatusMenuItem)
         menu.addItem(NSMenuItem.separator())
         let setKeyItem = NSMenuItem(title: "Set OpenAI Key…", action: #selector(setOpenAIKey), keyEquivalent: "k")
         setKeyItem.target = target
@@ -45,6 +62,11 @@ final class MenuBarController {
     func setState(_ message: String) {
         stateMenuItem.title = "Status: \(message)"
         TraceLogger.log("menu state updated: \(message)")
+    }
+
+    func setLaunchpadStatus(_ message: String) {
+        launchpadStatusMenuItem.title = "LaunchPad: \(message)"
+        TraceLogger.log("launchpad menu state updated: \(message)")
     }
 
     func setIndicatorState(_ state: IndicatorState) {

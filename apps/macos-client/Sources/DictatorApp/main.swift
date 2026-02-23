@@ -1,7 +1,21 @@
 import AppKit
+import Darwin
 import DictatorCore
 
 final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
+    private enum DictationState {
+        case idle
+        case recording
+        case thinking
+    }
+
+    private enum ShiftLatchState {
+        case unpressed
+        case pressedWillLatchOnRelease
+        case pressedNoLatchOnRelease
+        case latched
+    }
+
     private static let backspaceKeyCode: UInt16 = 51
     private static let cancelDebounceSeconds: TimeInterval = 0.15
 
@@ -12,6 +26,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private let recordingController = RecordingController()
     private let audioRecorder = AudioRecorder()
     private let activeTargetContextProvider = ActiveTargetContextProvider()
+    private lazy var keyboardInjector: KeyboardInjector = KeyboardInjector { [weak self] result in
+        DispatchQueue.main.async {
+            self?.handleKeyboardDispatchResult(result)
+        }
+    }
     private let secretStore = KeychainSecretStore()
     private lazy var coreClient: any DictatorCoreClient = PipelineOrchestrator(
         sttEngine: WhisperCPPBridgeSTTEngine(),
@@ -23,15 +42,29 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var isHandlingTrigger = false
     private var recordingContext: [String: String]?
     private var lastCancelTimestamp: TimeInterval?
+    private var launchpadMIDIManager: LaunchpadMIDIManager?
+    private var launchpadPageController: LaunchpadPageController?
+    private var launchpadRenderWorker: LaunchpadColorRenderWorker?
+    private var launchpadInvalidationBus: RenderInvalidationBus?
+    private var isRelaunching = false
+    private let dictationStateLock = NSLock()
+    private var dictationState: DictationState = .idle
+    private var activeDictationTask: Task<DictateCallResult, Error>?
+    private let shiftLatchStateLock = NSLock()
+    private var shiftLatchState: ShiftLatchState = .unpressed
 
     override init() {
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let dotenvValues = DotEnvLoader.loadIntoProcessEnvironment()
         TraceLogger.reset()
         TraceLogger.log("app did finish launching")
         TraceLogger.log("trace file: \(TraceLogger.path)")
+        if !dotenvValues.isEmpty {
+            TraceLogger.log("dotenv loaded keys=\(dotenvValues.keys.sorted().joined(separator: ","))")
+        }
 
         let menuBarController = MenuBarController()
         menuBarController.onSetAPIKey = { [weak self] in
@@ -55,7 +88,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         armBackspaceCancelMonitors()
         if triggerController.start() {
             if hasOpenAIKey() {
-                menuBarController.setState("Ready (Caps Lock toggles recording)")
+                menuBarController.setState("Ready (Caps Lock or Launchpad 0,0 toggles recording)")
             } else {
                 menuBarController.setState("Ready: Set OpenAI key from menu")
             }
@@ -64,10 +97,14 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             menuBarController.setState("Failed: Accessibility permission missing")
             TraceLogger.log("app startup failed: caps lock trigger not armed")
         }
+
+        setupLaunchpadIntegration()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         disarmBackspaceCancelMonitors()
+        launchpadRenderWorker?.stop()
+        launchpadMIDIManager?.stop()
     }
 
     @MainActor
@@ -116,11 +153,13 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 TraceLogger.log("captured recording context: unavailable")
             }
             _ = recordingController.toggle()
+            setDictationState(.recording)
             menuBarController?.setIndicatorState(.recording)
             menuBarController?.setState("Recording")
             TraceLogger.log("recording started")
         case let .failure(error):
             recordingContext = nil
+            setDictationState(.idle)
             menuBarController?.setIndicatorState(.idle)
             menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
             TraceLogger.log("recording start failed: \(error)")
@@ -136,6 +175,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         _ = recordingController.toggle()
         recordingContext = nil
         _ = audioRecorder.stop()
+        cancelActiveDictationTask()
+        setDictationState(.idle)
         menuBarController?.setIndicatorState(.idle)
         menuBarController?.setState("Recording canceled")
         TraceLogger.log("recording canceled via backspace")
@@ -192,6 +233,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         let stopResult = audioRecorder.stop()
         switch stopResult {
         case let .failure(error):
+            setDictationState(.idle)
             menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
             TraceLogger.log("recording stop failed: \(error)")
             return
@@ -199,20 +241,25 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             let requestContext = recordingContext
             recordingContext = nil
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
+            setDictationState(.thinking)
             menuBarController?.setIndicatorState(.refining)
             menuBarController?.setState("Transcribing + refining...")
 
             do {
                 let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
-                let dictatedCall = try await apiClient.dictate(
-                    DictateRequest(
-                        audio_b64: capturedAudio.data.base64EncodedString(),
-                        sample_rate: capturedAudio.sampleRate,
-                        locale: locale,
-                        session_id: sessionID,
-                        optional_context: requestContext
-                    )
+                let request = DictateRequest(
+                    audio_b64: capturedAudio.data.base64EncodedString(),
+                    sample_rate: capturedAudio.sampleRate,
+                    locale: locale,
+                    session_id: sessionID,
+                    optional_context: requestContext
                 )
+                let task = Task { [apiClient] in
+                    try await apiClient.dictate(request)
+                }
+                setActiveDictationTask(task)
+                let dictatedCall = try await task.value
+                clearActiveDictationTask(task)
                 let dictated = dictatedCall.response
                 TraceLogger.log(
                     "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs), refineMs=\(dictatedCall.refineMs), summary=\(dictated.edit_summary))"
@@ -221,6 +268,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
                 TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
                 if dictated.revised_text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    setDictationState(.idle)
                     menuBarController?.setIndicatorState(.idle)
                     menuBarController?.setState("No speech detected")
                     TraceLogger.log("dictate produced empty revised text; skipping insertion")
@@ -229,14 +277,24 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 let insertResult = ClipboardInserter.insert(dictated.revised_text)
                 switch insertResult {
                 case .success:
+                    setDictationState(.idle)
                     menuBarController?.setIndicatorState(.idle)
                     menuBarController?.setState("Inserted revised text")
                 case let .failure(error):
+                    setDictationState(.idle)
                     menuBarController?.setIndicatorState(.idle)
                     menuBarController?.setState("Failed: \(Self.failureMessage(for: error))")
                     TraceLogger.log("revised text insert failed: \(error)")
                 }
             } catch {
+                cancelActiveDictationTask()
+                setDictationState(.idle)
+                if error is CancellationError {
+                    menuBarController?.setIndicatorState(.idle)
+                    menuBarController?.setState("Thinking canceled")
+                    TraceLogger.log("dictate canceled")
+                    return
+                }
                 menuBarController?.setIndicatorState(.idle)
                 menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
                 TraceLogger.log("dictate failed: \(error)")
@@ -245,10 +303,10 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hasOpenAIKey() -> Bool {
-        guard let key = try? secretStore.getOpenAIKey() else {
-            return false
+        if APIKeyResolver.environmentValue() != nil {
+            return true
         }
-        return !key.isEmpty
+        return secretStore.hasOpenAIKeyWithoutPrompt()
     }
 
     private func promptForAPIKey(menuBarController: MenuBarController) {
@@ -353,10 +411,358 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private static func logSafeText(_ text: String) -> String {
         text.replacingOccurrences(of: "\n", with: "\\n")
     }
+
+    private func setupLaunchpadIntegration() {
+        if !KeyboardInjector.hasAccessibilityPermission() {
+            _ = KeyboardInjector.requestAccessibilityPermissionPrompt()
+            menuBarController?.setLaunchpadStatus("Enable Accessibility for keystrokes")
+        } else {
+            menuBarController?.setLaunchpadStatus("Keystrokes ready")
+        }
+
+        let invalidationBus = RenderInvalidationBus()
+        let pageController = LaunchpadPageController(invalidationBus: invalidationBus)
+        let pageFactory = LaunchpadPageFactory(
+            invalidationBus: invalidationBus,
+            onKeystroke: { [weak self] key, baseModifiers in
+                self?.dispatchLaunchpadKeystroke(key, baseModifiers: baseModifiers)
+            },
+            onDictationCommand: { [weak self] command in
+                Task { @MainActor in
+                    await self?.handleLaunchpadDictationCommand(command)
+                }
+            },
+            onContextualBackspace: { [weak self] in
+                Task { @MainActor in
+                    await self?.handleLaunchpadContextualBackspace()
+                }
+            },
+            onAppReload: { [weak self] in
+                Task { @MainActor in
+                    self?.triggerAppReload()
+                }
+            },
+            recordStatusColorProvider: { [weak self] in
+                self?.recordStatusColor() ?? .off
+            },
+            shiftLatchColorProvider: { [weak self] in
+                self?.shiftLatchColor() ?? PadColor(r: 50, g: 50, b: 0)
+            },
+            onModifierPress: { [weak self] modifier in
+                self?.handleModifierPress(modifier)
+            },
+            onModifierRelease: { [weak self] modifier in
+                self?.handleModifierRelease(modifier)
+            }
+        )
+
+        do {
+            let config = try LaunchpadLayoutLoader.loadDefault()
+            TraceLogger.log(
+                "launchpad layout loaded pages=\(config.pages.count) initial=\(config.initialPageID ?? "<none>")"
+            )
+            for page in config.pages {
+                TraceLogger.log("launchpad layout page id=\(page.id) pads=\(page.pads.count)")
+            }
+            let pages = pageFactory.makePages(from: config)
+            pageController.setPages(pages, initialPageID: config.initialPageID)
+        } catch {
+            TraceLogger.log("launchpad layout load failed: \(error)")
+            return
+        }
+
+        let midiManager = LaunchpadMIDIManager()
+        let renderWorker = LaunchpadColorRenderWorker(
+            invalidationBus: invalidationBus,
+            colorProvider: pageController,
+            transport: midiManager
+        )
+
+        midiManager.onPadEvent = { [weak pageController] event in
+            pageController?.handle(event)
+        }
+        midiManager.onConnectionStateChanged = { [weak self, weak renderWorker] state in
+            guard let self else {
+                return
+            }
+            switch state {
+            case .searching:
+                TraceLogger.log("launchpad state: searching")
+                self.menuBarController?.setLaunchpadStatus("Searching for Launchpad Pro Mk3")
+            case let .connected(name):
+                TraceLogger.log("launchpad state: connected (\(name))")
+                if KeyboardInjector.hasAccessibilityPermission() {
+                    self.menuBarController?.setLaunchpadStatus("Connected: \(name)")
+                } else {
+                    self.menuBarController?.setLaunchpadStatus("Connected: \(name) (needs Accessibility)")
+                }
+                renderWorker?.invalidateAll()
+            }
+        }
+        midiManager.onSleepStateChanged = { [weak self, weak renderWorker] sleeping in
+            guard let self else {
+                return
+            }
+            if sleeping {
+                TraceLogger.log("launchpad state: sleeping")
+                self.menuBarController?.setLaunchpadStatus("Launchpad sleeping (touch to wake)")
+                return
+            }
+
+            TraceLogger.log("launchpad state: awake")
+            renderWorker?.invalidateAll()
+            if KeyboardInjector.hasAccessibilityPermission() {
+                self.menuBarController?.setLaunchpadStatus("Connected: Launchpad Pro Mk3")
+            } else {
+                self.menuBarController?.setLaunchpadStatus("Connected: Launchpad Pro Mk3 (needs Accessibility)")
+            }
+        }
+
+        launchpadInvalidationBus = invalidationBus
+        launchpadPageController = pageController
+        launchpadMIDIManager = midiManager
+        launchpadRenderWorker = renderWorker
+
+        renderWorker.start()
+        midiManager.start()
+    }
+
+    @MainActor
+    private func handleLaunchpadDictationCommand(_ command: LaunchpadActionConfig.DictationCommand) async {
+        switch command {
+        case .start:
+            if currentDictationState() == .idle && !recordingController.isRecording {
+                await startRecording(menuBarController: menuBarController)
+            }
+        case .stop:
+            if currentDictationState() == .recording && recordingController.isRecording {
+                await stopRecordingAndDictate(menuBarController: menuBarController)
+            }
+        case .cancel:
+            cancelRecording(menuBarController: menuBarController)
+        case .toggle:
+            if currentDictationState() == .thinking {
+                cancelThinking(menuBarController: menuBarController)
+            } else if recordingController.isRecording {
+                await stopRecordingAndDictate(menuBarController: menuBarController)
+            } else {
+                await startRecording(menuBarController: menuBarController)
+            }
+        }
+    }
+
+    @MainActor
+    private func handleLaunchpadContextualBackspace() async {
+        if currentDictationState() == .recording {
+            cancelRecording(menuBarController: menuBarController)
+            return
+        }
+
+        if currentDictationState() == .thinking {
+            cancelThinking(menuBarController: menuBarController)
+            return
+        }
+
+        let modifiers = modifiersForKeyPress(.backspace)
+        _ = keyboardInjector.send(.backspace, modifiers: modifiers)
+    }
+
+    private func dispatchLaunchpadKeystroke(_ key: KeyboardKey, baseModifiers: Set<KeyboardModifier>) {
+        var modifiers = baseModifiers
+        modifiers.formUnion(modifiersForKeyPress(key))
+        _ = keyboardInjector.send(key, modifiers: modifiers)
+    }
+
+    private func handleKeyboardDispatchResult(_ result: KeyboardInjector.DispatchResult) {
+        if result.success {
+            menuBarController?.setLaunchpadStatus("Sent key: \(result.key.rawValue)")
+            return
+        }
+
+        switch result.failureReason {
+        case .accessibilityPermissionMissing:
+            _ = KeyboardInjector.requestAccessibilityPermissionPrompt()
+            menuBarController?.setLaunchpadStatus("Permission required for key: \(result.key.rawValue)")
+        case .eventConstructionFailed:
+            menuBarController?.setLaunchpadStatus("Key dispatch failed: \(result.key.rawValue)")
+        case .none:
+            menuBarController?.setLaunchpadStatus("Key dispatch failed: \(result.key.rawValue)")
+        }
+    }
+
+    @MainActor
+    private func cancelThinking(menuBarController: MenuBarController?) {
+        guard currentDictationState() == .thinking else {
+            return
+        }
+        cancelActiveDictationTask()
+        setDictationState(.idle)
+        menuBarController?.setIndicatorState(.idle)
+        menuBarController?.setState("Thinking canceled")
+        TraceLogger.log("thinking canceled via contextual backspace")
+    }
+
+    private func setDictationState(_ newState: DictationState) {
+        dictationStateLock.lock()
+        dictationState = newState
+        dictationStateLock.unlock()
+        launchpadInvalidationBus?.markDirty(reason: "dictation_state")
+    }
+
+    private func currentDictationState() -> DictationState {
+        dictationStateLock.lock()
+        let state = dictationState
+        dictationStateLock.unlock()
+        return state
+    }
+
+    private func setActiveDictationTask(_ task: Task<DictateCallResult, Error>) {
+        dictationStateLock.lock()
+        activeDictationTask = task
+        dictationStateLock.unlock()
+    }
+
+    private func clearActiveDictationTask(_ task: Task<DictateCallResult, Error>) {
+        dictationStateLock.lock()
+        _ = task
+        activeDictationTask = nil
+        dictationStateLock.unlock()
+    }
+
+    private func cancelActiveDictationTask() {
+        dictationStateLock.lock()
+        let task = activeDictationTask
+        activeDictationTask = nil
+        dictationStateLock.unlock()
+        task?.cancel()
+    }
+
+    private func recordStatusColor() -> PadColor {
+        switch currentDictationState() {
+        case .idle:
+            return PadColor(r: 255, g: 255, b: 255)
+        case .recording:
+            return PadColor(r: 255, g: 0, b: 0)
+        case .thinking:
+            return PadColor(r: 0, g: 0, b: 255)
+        }
+    }
+
+    private func handleModifierPress(_ modifier: LaunchpadActionConfig.ModifierType) {
+        guard modifier == .shift else {
+            return
+        }
+
+        shiftLatchStateLock.lock()
+        defer { shiftLatchStateLock.unlock() }
+
+        switch shiftLatchState {
+        case .latched:
+            shiftLatchState = .pressedNoLatchOnRelease
+        case .unpressed, .pressedWillLatchOnRelease, .pressedNoLatchOnRelease:
+            shiftLatchState = .pressedWillLatchOnRelease
+        }
+        launchpadInvalidationBus?.markDirty(reason: "shift_state")
+    }
+
+    private func handleModifierRelease(_ modifier: LaunchpadActionConfig.ModifierType) {
+        guard modifier == .shift else {
+            return
+        }
+
+        shiftLatchStateLock.lock()
+        defer { shiftLatchStateLock.unlock() }
+
+        switch shiftLatchState {
+        case .pressedWillLatchOnRelease:
+            shiftLatchState = .latched
+        case .pressedNoLatchOnRelease:
+            shiftLatchState = .unpressed
+        case .latched, .unpressed:
+            break
+        }
+        launchpadInvalidationBus?.markDirty(reason: "shift_state")
+    }
+
+    private func modifiersForKeyPress(_ key: KeyboardKey) -> Set<KeyboardModifier> {
+        let isArrow = (key == .up || key == .down || key == .left || key == .right)
+
+        shiftLatchStateLock.lock()
+        defer { shiftLatchStateLock.unlock() }
+
+        switch shiftLatchState {
+        case .unpressed:
+            return []
+        case .pressedWillLatchOnRelease:
+            if !isArrow {
+                shiftLatchState = .pressedNoLatchOnRelease
+                launchpadInvalidationBus?.markDirty(reason: "shift_state")
+            }
+            return [.shift]
+        case .pressedNoLatchOnRelease:
+            return [.shift]
+        case .latched:
+            if isArrow {
+                return [.shift]
+            }
+            shiftLatchState = .unpressed
+            launchpadInvalidationBus?.markDirty(reason: "shift_state")
+            return []
+        }
+    }
+
+    private func shiftLatchColor() -> PadColor {
+        shiftLatchStateLock.lock()
+        let state = shiftLatchState
+        shiftLatchStateLock.unlock()
+
+        switch state {
+        case .unpressed:
+            return PadColor(r: 50, g: 50, b: 0)
+        case .pressedWillLatchOnRelease, .pressedNoLatchOnRelease, .latched:
+            return PadColor(r: 255, g: 220, b: 0)
+        }
+    }
+
+    @MainActor
+    private func triggerAppReload() {
+        guard !isRelaunching else {
+            TraceLogger.log("reload ignored: relaunch already in progress")
+            return
+        }
+        isRelaunching = true
+
+        guard let executablePath = Bundle.main.executablePath ?? CommandLine.arguments.first else {
+            TraceLogger.log("reload failed: executable path unavailable")
+            menuBarController?.setLaunchpadStatus("Reload failed: no executable path")
+            isRelaunching = false
+            return
+        }
+
+        let currentPID = getpid()
+        let launchArgs = Array(CommandLine.arguments.dropFirst())
+        let spawned = AppRelaunchHelper.spawnRelaunchHelper(
+            currentPID: currentPID,
+            executablePath: executablePath,
+            arguments: launchArgs
+        )
+
+        guard spawned else {
+            menuBarController?.setLaunchpadStatus("Reload failed: helper spawn")
+            isRelaunching = false
+            return
+        }
+
+        menuBarController?.setLaunchpadStatus("Reloading...")
+        TraceLogger.log("reload requested from launchpad")
+        NSApplication.shared.terminate(nil)
+    }
 }
 
-let app = NSApplication.shared
-let delegate = DictatorAppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.accessory)
-app.run()
+if !AppRelaunchHelper.maybeRunFromCommandLine(arguments: CommandLine.arguments) {
+    let app = NSApplication.shared
+    let delegate = DictatorAppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory)
+    app.run()
+}

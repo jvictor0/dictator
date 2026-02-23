@@ -18,9 +18,9 @@ final class SmokeTests: XCTestCase {
         let stateItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let menu = MenuBarController.makeMenu(stateMenuItem: stateItem, target: target)
 
-        XCTAssertEqual(menu.items.count, 6)
-        XCTAssertEqual(menu.items[5].title, "Quit")
-        XCTAssertEqual(menu.items[5].keyEquivalent, "q")
+        XCTAssertEqual(menu.items.count, 7)
+        XCTAssertEqual(menu.items[6].title, "Quit")
+        XCTAssertEqual(menu.items[6].keyEquivalent, "q")
     }
 
     func testCapsLockTriggerOnlyOnCapsFlagsChanged() {
