@@ -103,7 +103,9 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
         let promptsDir = tempDir.appendingPathComponent("prompts/system-prompts", isDirectory: true)
         try FileManager.default.createDirectory(at: promptsDir, withIntermediateDirectories: true)
         try "v1".write(to: promptsDir.appendingPathComponent("intent_refiner_v1.md"), atomically: true, encoding: .utf8)
-        try "v2".write(to: promptsDir.appendingPathComponent("intent_refiner_v2.md"), atomically: true, encoding: .utf8)
+        let nestedDir = promptsDir.appendingPathComponent("team/release", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedDir, withIntermediateDirectories: true)
+        try "v2".write(to: nestedDir.appendingPathComponent("intent_refiner_v2.md"), atomically: true, encoding: .utf8)
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: tempDir.appendingPathComponent("runtime-config.json")),
@@ -124,11 +126,11 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
         )
 
         let options = try await manager.getOptions(name: "System Prompt")
-        XCTAssertEqual(options, [.string("intent_refiner_v1.md"), .string("intent_refiner_v2.md")])
+        XCTAssertEqual(options, [.string("intent_refiner_v1.md"), .string("team/release/intent_refiner_v2.md")])
 
-        try await manager.set(name: "System Prompt", value: .string("intent_refiner_v2.md"))
+        try await manager.set(name: "System Prompt", value: .string("team/release/intent_refiner_v2.md"))
         let inMemory = await provider.currentRuntimeConfig()
-        XCTAssertEqual(inMemory.systemPrompt, "intent_refiner_v2.md")
+        XCTAssertEqual(inMemory.systemPrompt, "team/release/intent_refiner_v2.md")
     }
 
     private func makeTempDir() throws -> URL {

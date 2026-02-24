@@ -62,15 +62,23 @@ struct LaunchpadPlaceholderTab: LaunchpadOverlayTab {
 @MainActor
 final class LaunchpadFullscreenOverlayController {
     private let tabs: [any LaunchpadOverlayTab]
+    private let userDefaults: UserDefaults
+    private let selectedTabDefaultsKey: String
     private var window: NSWindow?
     private var contentController: LaunchpadOverlayContentController?
     private(set) var isVisible = false
     var onStateChanged: ((LaunchpadOverlayState) -> Void)?
     var tabCount: Int { tabs.count }
 
-    init(tabs: [any LaunchpadOverlayTab]) {
+    init(
+        tabs: [any LaunchpadOverlayTab],
+        userDefaults: UserDefaults = .standard,
+        selectedTabDefaultsKey: String = "launchpad.overlay.selectedTabIndex"
+    ) {
         precondition(!tabs.isEmpty, "Launchpad overlay requires at least one tab")
         self.tabs = tabs
+        self.userDefaults = userDefaults
+        self.selectedTabDefaultsKey = selectedTabDefaultsKey
     }
 
     @discardableResult
@@ -84,9 +92,13 @@ final class LaunchpadFullscreenOverlayController {
     }
 
     func show() {
+        let hadWindow = window != nil
         ensureWindow()
         guard let window else {
             return
+        }
+        if hadWindow {
+            contentController?.refreshSelectedTabContent()
         }
         window.setFrame(activeScreenFrame(), display: true)
         window.orderFront(nil)
@@ -95,7 +107,6 @@ final class LaunchpadFullscreenOverlayController {
     }
 
     func hide() {
-        contentController?.resetToInitialTab()
         contentController?.notifyOverlayDidClose()
         window?.orderOut(nil)
         isVisible = false
@@ -129,7 +140,11 @@ final class LaunchpadFullscreenOverlayController {
             return
         }
 
-        let controller = LaunchpadOverlayContentController(tabs: tabs)
+        let restoredIndex = max(0, min(tabs.count - 1, userDefaults.integer(forKey: selectedTabDefaultsKey)))
+        let controller = LaunchpadOverlayContentController(
+            tabs: tabs,
+            initialSelectedIndex: restoredIndex
+        )
         controller.onSelectionChanged = { [weak self] _ in
             self?.notifyStateChanged()
         }
@@ -153,10 +168,12 @@ final class LaunchpadFullscreenOverlayController {
     }
 
     private func notifyStateChanged() {
+        let selectedIndex = contentController?.selectedTabIndex ?? 0
+        userDefaults.set(selectedIndex, forKey: selectedTabDefaultsKey)
         onStateChanged?(
             LaunchpadOverlayState(
                 isVisible: isVisible,
-                selectedTabIndex: contentController?.selectedTabIndex ?? 0
+                selectedTabIndex: selectedIndex
             )
         )
     }
@@ -178,12 +195,13 @@ private final class LaunchpadOverlayContentController: NSViewController {
     private let tabBar: NSSegmentedControl
     private let contentContainer = NSView()
     var onSelectionChanged: ((Int) -> Void)?
-    private var selectedIndex = 0
+    private var selectedIndex: Int
     var selectedTabIndex: Int { selectedIndex }
 
-    init(tabs: [any LaunchpadOverlayTab]) {
+    init(tabs: [any LaunchpadOverlayTab], initialSelectedIndex: Int = 0) {
         self.tabs = tabs
         self.tabBar = NSSegmentedControl(labels: tabs.map { $0.title }, trackingMode: .selectOne, target: nil, action: nil)
+        self.selectedIndex = max(0, min(tabs.count - 1, initialSelectedIndex))
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -198,7 +216,7 @@ private final class LaunchpadOverlayContentController: NSViewController {
         view.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.95).cgColor
 
         tabBar.translatesAutoresizingMaskIntoConstraints = false
-        tabBar.selectedSegment = 0
+        tabBar.selectedSegment = selectedIndex
         tabBar.target = self
         tabBar.action = #selector(tabSelected(_:))
 
@@ -222,13 +240,6 @@ private final class LaunchpadOverlayContentController: NSViewController {
         ])
 
         renderSelectedTab()
-    }
-
-    func resetToInitialTab() {
-        selectedIndex = 0
-        tabBar.selectedSegment = 0
-        renderSelectedTab()
-        onSelectionChanged?(selectedIndex)
     }
 
     func selectTab(index: Int) {
@@ -259,6 +270,10 @@ private final class LaunchpadOverlayContentController: NSViewController {
         for tab in tabs {
             tab.overlayDidClose()
         }
+    }
+
+    func refreshSelectedTabContent() {
+        renderSelectedTab()
     }
 
     private func renderSelectedTab() {

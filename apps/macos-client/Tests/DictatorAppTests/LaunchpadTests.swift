@@ -365,6 +365,32 @@ final class LaunchpadTests: XCTestCase {
     }
 
     @MainActor
+    func testOverlayControllerRestoresLastSelectedTabWhenReopened() async {
+        let suiteName = "test.overlay.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstTab = FakeOverlayTab(id: "config", title: "config")
+        let secondTab = FakeOverlayTab(id: "system-prompts", title: "system-prompts")
+        let controller = LaunchpadFullscreenOverlayController(
+            tabs: [firstTab, secondTab],
+            userDefaults: defaults,
+            selectedTabDefaultsKey: "test.overlay.selected"
+        )
+
+        controller.show()
+        XCTAssertTrue(controller.selectTab(index: 1, showIfHidden: false))
+        controller.hide()
+        controller.show()
+
+        let handled = await controller.handleOverlayKey(.right)
+        XCTAssertTrue(handled)
+        XCTAssertTrue(firstTab.handledKeys.isEmpty)
+        XCTAssertEqual(secondTab.handledKeys, [.right])
+        XCTAssertEqual(secondTab.makeContentViewCount, 2)
+    }
+
+    @MainActor
     func testConfigOverlayTabUsesArrowKeysForSelectionAndOptionCycling() async throws {
         var snapshots: [RuntimeConfigurationSnapshot] = [
             .init(
@@ -427,6 +453,80 @@ final class LaunchpadTests: XCTestCase {
         try await Task.sleep(nanoseconds: 40_000_000)
         _ = await tab.handleOverlayKey(.right)
         XCTAssertEqual(getOptionsCalls, 3)
+    }
+
+    @MainActor
+    func testSystemPromptsTabSelectsFileOnlyOnEnter() async throws {
+        var selectedPromptPath = "alpha/one.md"
+        var setCalls: [String] = []
+
+        let tab = LaunchpadSystemPromptsOverlayTab(
+            listDirectoryEntries: { directory in
+                switch directory {
+                case "":
+                    return [
+                        .init(name: "alpha", relativePath: "alpha", isDirectory: true),
+                        .init(name: "root.md", relativePath: "root.md", isDirectory: false)
+                    ]
+                case "alpha":
+                    return [
+                        .init(name: "one.md", relativePath: "alpha/one.md", isDirectory: false),
+                        .init(name: "two.md", relativePath: "alpha/two.md", isDirectory: false)
+                    ]
+                default:
+                    return []
+                }
+            },
+            loadPromptBody: { path in "body-\(path)" },
+            getSelectedPromptPath: { selectedPromptPath },
+            setSelectedPromptPath: { path in
+                setCalls.append(path)
+                selectedPromptPath = path
+            }
+        )
+
+        _ = tab.makeContentView()
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        _ = await tab.handleOverlayKey(.down)
+        XCTAssertTrue(setCalls.isEmpty)
+
+        _ = await tab.handleOverlayKey(.enter)
+        XCTAssertEqual(setCalls, ["alpha/two.md"])
+    }
+
+    @MainActor
+    func testSystemPromptsTabRightArrowExpandsDirectoryTree() async throws {
+        var queriedDirectories: [String] = []
+
+        let tab = LaunchpadSystemPromptsOverlayTab(
+            listDirectoryEntries: { directory in
+                queriedDirectories.append(directory)
+                switch directory {
+                case "":
+                    return [
+                        .init(name: "alpha", relativePath: "alpha", isDirectory: true)
+                    ]
+                case "alpha":
+                    return [
+                        .init(name: "child.md", relativePath: "alpha/child.md", isDirectory: false)
+                    ]
+                default:
+                    return []
+                }
+            },
+            loadPromptBody: { _ in "body" },
+            getSelectedPromptPath: { "root.md" },
+            setSelectedPromptPath: { _ in }
+        )
+
+        _ = tab.makeContentView()
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertTrue(queriedDirectories.contains(""))
+        XCTAssertFalse(queriedDirectories.contains("alpha"))
+
+        _ = await tab.handleOverlayKey(.right)
+        XCTAssertTrue(queriedDirectories.contains("alpha"))
     }
 
     func testLaunchpadCellRepeatsWhileHeld() {
@@ -533,6 +633,7 @@ private final class FakeOverlayTab: LaunchpadOverlayTab {
     let id: String
     let title: String
     var handledKeys: [KeyboardKey] = []
+    var makeContentViewCount = 0
 
     init(id: String, title: String) {
         self.id = id
@@ -540,7 +641,8 @@ private final class FakeOverlayTab: LaunchpadOverlayTab {
     }
 
     func makeContentView() -> NSView {
-        NSView()
+        makeContentViewCount += 1
+        return NSView()
     }
 
     func handleOverlayKey(_ key: KeyboardKey) async -> Bool {

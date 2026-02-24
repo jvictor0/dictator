@@ -334,8 +334,13 @@ public final class RuntimeSystemPromptConfiguration: RuntimeConfiguration, @unch
         guard case let .string(promptFile) = value else {
             throw DictatorError.configUpdateFailed("\(name) must be a string")
         }
+        let sanitizedPath = promptCatalog.sanitizeRelativePath(promptFile)
+        let available = try promptCatalog.listPromptFiles()
+        guard available.contains(sanitizedPath) else {
+            throw DictatorError.configUpdateFailed("unknown system prompt path: \(sanitizedPath)")
+        }
         let updated = try await runtimeConfigProvider.applyInMemoryPatch(
-            RuntimeConfigPatch(systemPrompt: promptCatalog.sanitizeFileName(promptFile))
+            RuntimeConfigPatch(systemPrompt: sanitizedPath)
         )
         updateCurrentValue(.string(updated.systemPrompt))
     }

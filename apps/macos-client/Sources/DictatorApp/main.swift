@@ -506,17 +506,34 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let systemPromptsTab = LaunchpadSystemPromptsOverlayTab(
-            loadPromptDetails: { [weak self] in
+            listDirectoryEntries: { relativeDirectory in
+                let promptCatalog = SystemPromptCatalog()
+                return try promptCatalog
+                    .listEntries(in: relativeDirectory)
+                    .map { entry in
+                        LaunchpadSystemPromptsOverlayTab.DirectoryEntry(
+                            name: entry.name,
+                            relativePath: entry.relativePath,
+                            isDirectory: entry.kind == .directory
+                        )
+                    }
+            },
+            loadPromptBody: { relativePath in
+                try SystemPromptCatalog().loadPrompt(named: relativePath)
+            },
+            getSelectedPromptPath: { [weak self] in
+                guard let self else {
+                    return SystemPromptCatalog.defaultPromptFile
+                }
+                let runtimeConfig = await self.runtimeConfigProvider.currentRuntimeConfig()
+                return runtimeConfig.systemPrompt
+            },
+            setSelectedPromptPath: { [weak self] relativePath in
                 guard let self else {
                     throw DictatorError.configInteractionUnavailable
                 }
-                let runtimeConfig = await self.runtimeConfigProvider.currentRuntimeConfig()
-                let promptCatalog = SystemPromptCatalog()
-                let prompt = promptCatalog.resolvePrompt(named: runtimeConfig.systemPrompt)
-                return LaunchpadSystemPromptsOverlayTab.PromptDetails(
-                    fileName: runtimeConfig.systemPrompt,
-                    body: prompt
-                )
+                let manager = try await self.runtimeConfigurationManagerInstance()
+                try await manager.set(name: "System Prompt", value: .string(relativePath))
             }
         )
         let overlayController = LaunchpadFullscreenOverlayController(
@@ -770,7 +787,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func isOverlayNavigationKey(_ key: KeyboardKey) -> Bool {
-        key == .up || key == .down || key == .left || key == .right
+        key == .up || key == .down || key == .left || key == .right || key == .enter
     }
 
     @MainActor
