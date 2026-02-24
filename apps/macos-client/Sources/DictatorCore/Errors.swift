@@ -7,6 +7,8 @@ public enum DictatorError: Error, Sendable {
     case refinementFailed(String)
     case sttFailed(String)
     case permissionsDenied(String)
+    case configUpdateFailed(String)
+    case configInteractionUnavailable
 }
 
 extension DictatorError: LocalizedError {
@@ -24,6 +26,10 @@ extension DictatorError: LocalizedError {
             return "Speech recognition failed: \(message)"
         case let .permissionsDenied(scope):
             return "Permission denied: \(scope)"
+        case let .configUpdateFailed(message):
+            return "Runtime config update failed: \(message)"
+        case .configInteractionUnavailable:
+            return "Runtime config interaction is unavailable"
         }
     }
 }

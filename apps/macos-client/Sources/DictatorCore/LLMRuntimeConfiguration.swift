@@ -32,7 +32,8 @@ public struct LLMRuntimeConfiguration: Sendable {
     }
 
     public static func fromEnvironment(
-        _ env: [String: String] = ProcessInfo.processInfo.environment
+        _ env: [String: String] = ProcessInfo.processInfo.environment,
+        runtimeOverride: RuntimeConfigFile? = nil
     ) -> LLMRuntimeConfiguration {
         let provider = Provider(rawValue: normalized(env["DICTATOR_LLM_PROVIDER"])) ?? .ollama
         let fallback = Fallback(rawValue: normalized(env["DICTATOR_LLM_FALLBACK"])) ?? .openai
@@ -40,13 +41,37 @@ public struct LLMRuntimeConfiguration: Sendable {
         let ollamaModel = normalizedNonEmpty(env["DICTATOR_OLLAMA_MODEL"]) ?? "qwen2.5:7b-instruct"
         let openAIModel = normalizedNonEmpty(env["OPENAI_MODEL"]) ?? "gpt-4.1-mini"
 
-        return LLMRuntimeConfiguration(
+        var resolved = LLMRuntimeConfiguration(
             provider: provider,
             ollamaHost: trimTrailingSlash(ollamaHost),
             ollamaModel: ollamaModel,
             fallback: fallback,
             openAIModel: openAIModel
         )
+
+        guard let runtimeOverride else {
+            return resolved
+        }
+
+        if runtimeOverride.useCloud {
+            resolved = LLMRuntimeConfiguration(
+                provider: .openai,
+                ollamaHost: resolved.ollamaHost,
+                ollamaModel: resolved.ollamaModel,
+                fallback: resolved.fallback,
+                openAIModel: runtimeOverride.model
+            )
+        } else {
+            resolved = LLMRuntimeConfiguration(
+                provider: .ollama,
+                ollamaHost: resolved.ollamaHost,
+                ollamaModel: runtimeOverride.model,
+                fallback: resolved.fallback,
+                openAIModel: resolved.openAIModel
+            )
+        }
+
+        return resolved
     }
 
     private static func normalized(_ value: String?) -> String {

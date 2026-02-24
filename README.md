@@ -15,6 +15,7 @@ Dictator is a unified Swift dictation codebase with platform wrappers for macOS 
 
 1. Copy `.env.example` to `.env` and set keys.
    - Local refinement defaults to Ollama (`qwen2.5:7b-instruct`); OpenAI key is optional fallback.
+   - Runtime mutable LLM config is persisted in `apps/macos-client/Config/runtime-config.json` and overrides `.env` for model/cloud mode.
 2. Build/test macOS app + shared core:
    - `cd apps/macos-client`
    - `swift build`

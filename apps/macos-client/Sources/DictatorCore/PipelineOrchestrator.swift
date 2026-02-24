@@ -3,10 +3,16 @@ import Foundation
 public final class PipelineOrchestrator: DictatorCoreClient {
     private let sttEngine: STTEngine
     private let refinementEngine: RefinementEngine
+    private let voiceConfigInteractionOrchestrator: VoiceConfigInteractionOrchestrator?
 
-    public init(sttEngine: STTEngine, refinementEngine: RefinementEngine) {
+    public init(
+        sttEngine: STTEngine,
+        refinementEngine: RefinementEngine,
+        voiceConfigInteractionOrchestrator: VoiceConfigInteractionOrchestrator? = nil
+    ) {
         self.sttEngine = sttEngine
         self.refinementEngine = refinementEngine
+        self.voiceConfigInteractionOrchestrator = voiceConfigInteractionOrchestrator
     }
 
     public func transcribe(_ request: TranscribeRequest) async throws -> TranscribeResponse {
@@ -61,6 +67,13 @@ public final class PipelineOrchestrator: DictatorCoreClient {
             transcribeMs: transcribeMs,
             refineMs: refineStart.durationMs
         )
+    }
+
+    public func interactForRuntimeConfig(_ request: VoiceConfigInteractionRequest) async throws -> VoiceConfigInteractionResult {
+        guard let voiceConfigInteractionOrchestrator else {
+            throw DictatorError.configInteractionUnavailable
+        }
+        return try await voiceConfigInteractionOrchestrator.interact(request)
     }
 }
 

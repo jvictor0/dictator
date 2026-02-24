@@ -45,6 +45,8 @@ struct LaunchpadActionConfig: Decodable {
         case contextualBackspace = "contextual_backspace"
         case appReload = "app_reload"
         case modifierLatch = "modifier_latch"
+        case changeAgentModelMode = "change_agent_model_mode"
+        case loadSafeRuntimeConfig = "load_safe_runtime_config"
     }
 
     enum DictationCommand: String, Decodable {
@@ -144,6 +146,10 @@ enum LaunchpadLayoutLoader {
                     break
                 case .appReload:
                     break
+                case .changeAgentModelMode:
+                    break
+                case .loadSafeRuntimeConfig:
+                    break
                 case .modifierLatch:
                     guard pad.action.modifier != nil else {
                         throw NSError(
@@ -167,6 +173,8 @@ final class LaunchpadPageFactory {
     private let onDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?
     private let onContextualBackspace: (() -> Void)?
     private let onAppReload: (() -> Void)?
+    private let onChangeAgentModelMode: (() -> Void)?
+    private let onLoadSafeRuntimeConfig: (() -> Void)?
     private let recordStatusColorProvider: () -> PadColor
     private let shiftLatchColorProvider: () -> PadColor
     private let onModifierPress: ((LaunchpadActionConfig.ModifierType) -> Void)?
@@ -178,6 +186,8 @@ final class LaunchpadPageFactory {
         onDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?,
         onContextualBackspace: (() -> Void)?,
         onAppReload: (() -> Void)?,
+        onChangeAgentModelMode: (() -> Void)?,
+        onLoadSafeRuntimeConfig: (() -> Void)?,
         recordStatusColorProvider: @escaping () -> PadColor,
         shiftLatchColorProvider: @escaping () -> PadColor,
         onModifierPress: ((LaunchpadActionConfig.ModifierType) -> Void)?,
@@ -188,6 +198,8 @@ final class LaunchpadPageFactory {
         self.onDictationCommand = onDictationCommand
         self.onContextualBackspace = onContextualBackspace
         self.onAppReload = onAppReload
+        self.onChangeAgentModelMode = onChangeAgentModelMode
+        self.onLoadSafeRuntimeConfig = onLoadSafeRuntimeConfig
         self.recordStatusColorProvider = recordStatusColorProvider
         self.shiftLatchColorProvider = shiftLatchColorProvider
         self.onModifierPress = onModifierPress
@@ -199,6 +211,8 @@ final class LaunchpadPageFactory {
         let onDictationCommand = self.onDictationCommand
         let onContextualBackspace = self.onContextualBackspace
         let onAppReload = self.onAppReload
+        let onChangeAgentModelMode = self.onChangeAgentModelMode
+        let onLoadSafeRuntimeConfig = self.onLoadSafeRuntimeConfig
         let recordStatusColorProvider = self.recordStatusColorProvider
         let shiftLatchColorProvider = self.shiftLatchColorProvider
         let onModifierPress = self.onModifierPress
@@ -238,6 +252,16 @@ final class LaunchpadPageFactory {
                     "launchpad action app_reload page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
                 )
                 onAppReload?()
+            case .changeAgentModelMode:
+                TraceLogger.log(
+                    "launchpad action change_agent_model_mode page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
+                )
+                onChangeAgentModelMode?()
+            case .loadSafeRuntimeConfig:
+                TraceLogger.log(
+                    "launchpad action load_safe_runtime_config page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
+                )
+                onLoadSafeRuntimeConfig?()
             case .modifierLatch:
                 break
             }
@@ -251,7 +275,7 @@ final class LaunchpadPageFactory {
                 switch padConfig.action.type {
                 case .keystroke, .contextualBackspace:
                     shouldRepeat = true
-                case .dictation, .appReload, .modifierLatch:
+                case .dictation, .appReload, .modifierLatch, .changeAgentModelMode, .loadSafeRuntimeConfig:
                     shouldRepeat = false
                 }
                 let cell: LaunchpadCellType

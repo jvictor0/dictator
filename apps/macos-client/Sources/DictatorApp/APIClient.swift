@@ -29,6 +29,10 @@ public final class APIClient {
         return decoded
     }
 
+    public func interactForRuntimeConfig(_ payload: VoiceConfigInteractionRequest) async throws -> VoiceConfigInteractionResult {
+        try await coreClient.interactForRuntimeConfig(payload)
+    }
+
     public static func decodeDictateResponse(from data: Data) throws -> DictateResponse {
         try JSONDecoder().decode(DictateResponse.self, from: data)
     }

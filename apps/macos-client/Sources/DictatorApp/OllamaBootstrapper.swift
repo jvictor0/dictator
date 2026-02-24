@@ -65,9 +65,17 @@ enum OllamaBootstrapper {
     }
 
     private static func startServeProcess() throws -> Process {
+        let environment = ProcessInfo.processInfo.environment
+        let configuredBinary = environment["DICTATOR_OLLAMA_BIN"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["ollama", "serve"]
+        if let configuredBinary, !configuredBinary.isEmpty {
+            process.executableURL = URL(fileURLWithPath: configuredBinary)
+            process.arguments = ["serve"]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["ollama", "serve"]
+        }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice

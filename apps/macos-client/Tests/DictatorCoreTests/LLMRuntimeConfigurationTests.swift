@@ -26,4 +26,24 @@ final class LLMRuntimeConfigurationTests: XCTestCase {
         XCTAssertEqual(config.fallback, .none)
         XCTAssertEqual(config.openAIModel, "gpt-4.1")
     }
+
+    func testRuntimeOverrideWinsForModelAndProvider() {
+        let config = LLMRuntimeConfiguration.fromEnvironment(
+            [
+                "DICTATOR_LLM_PROVIDER": "ollama",
+                "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
+                "OPENAI_MODEL": "gpt-4.1-mini"
+            ],
+            runtimeOverride: RuntimeConfigFile(
+                version: 1,
+                model: "gpt-4.1",
+                useCloud: true,
+                updatedAt: "2026-02-23T00:00:00Z"
+            )
+        )
+
+        XCTAssertEqual(config.provider, .openai)
+        XCTAssertEqual(config.openAIModel, "gpt-4.1")
+        XCTAssertEqual(config.ollamaModel, "qwen2.5:7b-instruct")
+    }
 }

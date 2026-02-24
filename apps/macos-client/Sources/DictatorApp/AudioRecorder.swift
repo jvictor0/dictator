@@ -17,6 +17,8 @@ public final class AudioRecorder {
 
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
+    private var isStarting = false
+    private let stateLock = NSLock()
     private let sampleRate: Int
 
     public init(sampleRate: Int = 16_000) {
@@ -24,6 +26,22 @@ public final class AudioRecorder {
     }
 
     public func start() async -> Result<Void, RecorderError> {
+        let canStart = stateLock.withLock { () -> Bool in
+            if recorder != nil || isStarting {
+                return false
+            }
+            isStarting = true
+            return true
+        }
+        guard canStart else {
+            return .failure(.startFailed)
+        }
+        defer {
+            stateLock.withLock {
+                isStarting = false
+            }
+        }
+
         let permitted = await microphonePermissionGranted()
         guard permitted else {
             return .failure(.microphonePermissionMissing)
@@ -48,8 +66,10 @@ public final class AudioRecorder {
             guard recorder.record() else {
                 return .failure(.startFailed)
             }
-            self.recorder = recorder
-            self.recordingURL = url
+            stateLock.withLock {
+                self.recorder = recorder
+                self.recordingURL = url
+            }
             return .success(())
         } catch {
             return .failure(.recorderSetupFailed)
@@ -57,13 +77,20 @@ public final class AudioRecorder {
     }
 
     public func stop() -> Result<CapturedAudio, RecorderError> {
-        guard let recorder, let recordingURL else {
+        let active: (AVAudioRecorder, URL)? = stateLock.withLock {
+            guard let recorder, let recordingURL else {
+                return nil
+            }
+            self.recorder = nil
+            self.recordingURL = nil
+            return (recorder, recordingURL)
+        }
+
+        guard let (recorder, recordingURL) = active else {
             return .failure(.notRecording)
         }
 
         recorder.stop()
-        self.recorder = nil
-        self.recordingURL = nil
 
         do {
             let data = try Data(contentsOf: recordingURL)

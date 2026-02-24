@@ -4,6 +4,7 @@ public protocol DictatorCoreClient: Sendable {
     func transcribe(_ request: TranscribeRequest) async throws -> TranscribeResponse
     func refine(_ request: RefineRequest) async throws -> RefineResponse
     func dictate(_ request: DictateRequest) async throws -> DictateCallResult
+    func interactForRuntimeConfig(_ request: VoiceConfigInteractionRequest) async throws -> VoiceConfigInteractionResult
 }
 
 public protocol AudioInputPort: Sendable {

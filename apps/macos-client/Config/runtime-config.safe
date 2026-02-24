@@ -1,0 +1,6 @@
+{
+  "model" : "qwen2.5:7b-instruct",
+  "updated_at" : "2026-02-24T06:00:00Z",
+  "use_cloud" : false,
+  "version" : 1
+}
