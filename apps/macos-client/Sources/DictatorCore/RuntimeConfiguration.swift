@@ -306,6 +306,41 @@ public final class RuntimeBooleanConfiguration: RuntimeConfiguration, @unchecked
     }
 }
 
+public final class RuntimeSystemPromptConfiguration: RuntimeConfiguration, @unchecked Sendable {
+    private let runtimeConfigProvider: RuntimeConfigProvider
+    private let promptCatalog: SystemPromptCatalog
+
+    public init(
+        name: String,
+        currentValue: String,
+        defaultValue: String,
+        runtimeConfigProvider: RuntimeConfigProvider,
+        promptCatalog: SystemPromptCatalog = SystemPromptCatalog()
+    ) {
+        self.runtimeConfigProvider = runtimeConfigProvider
+        self.promptCatalog = promptCatalog
+        super.init(
+            name: name,
+            currentValue: .string(currentValue),
+            defaultValue: .string(defaultValue)
+        )
+    }
+
+    public override func getOptions() async throws -> [RuntimeConfigurationValue] {
+        try promptCatalog.listPromptFiles().map { .string($0) }
+    }
+
+    public override func set(_ value: RuntimeConfigurationValue) async throws {
+        guard case let .string(promptFile) = value else {
+            throw DictatorError.configUpdateFailed("\(name) must be a string")
+        }
+        let updated = try await runtimeConfigProvider.applyInMemoryPatch(
+            RuntimeConfigPatch(systemPrompt: promptCatalog.sanitizeFileName(promptFile))
+        )
+        updateCurrentValue(.string(updated.systemPrompt))
+    }
+}
+
 public actor RuntimeConfigurationManager {
     private let configurations: [RuntimeConfiguration]
 

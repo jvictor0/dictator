@@ -8,6 +8,7 @@ Dictator is a unified Swift dictation codebase with platform wrappers for macOS 
 - `apps/ios-keyboard`: iOS host/keyboard wrapper scaffold sharing `DictatorCore`
 - `contracts`: language-agnostic contract source of truth
 - `prompts`: Prompt templates for transcript refinement
+- `prompts/system-prompts`: versioned system prompt files selectable at runtime
 - `skills`: Four role skills (`architect`, `implementer`, `reviewer`, `tester`)
 - `docs`: Governance, architecture, testing, and product docs
 

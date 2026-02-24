@@ -4,6 +4,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public let version: Int
     public let cloudModel: String
     public let localModel: String
+    public let systemPrompt: String
     public let useCloud: Bool
     public let updatedAt: String
 
@@ -15,12 +16,14 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         version: Int = 2,
         cloudModel: String,
         localModel: String,
+        systemPrompt: String = SystemPromptCatalog.defaultPromptFile,
         useCloud: Bool,
         updatedAt: String
     ) {
         self.version = version
         self.cloudModel = cloudModel
         self.localModel = localModel
+        self.systemPrompt = systemPrompt
         self.useCloud = useCloud
         self.updatedAt = updatedAt
     }
@@ -40,6 +43,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         case model
         case cloudModel = "cloud_model"
         case localModel = "local_model"
+        case systemPrompt = "system_prompt"
         case useCloud = "use_cloud"
         case updatedAt = "updated_at"
     }
@@ -53,15 +57,18 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
 
         let cloudModel = try container.decodeIfPresent(String.self, forKey: .cloudModel)
         let localModel = try container.decodeIfPresent(String.self, forKey: .localModel)
+        let systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
         let legacyModel = try container.decodeIfPresent(String.self, forKey: .model)
 
         let resolvedCloudModel = cloudModel ?? legacyModel ?? "gpt-4.1-mini"
         let resolvedLocalModel = localModel ?? legacyModel ?? "qwen2.5:7b-instruct"
+        let resolvedSystemPrompt = systemPrompt ?? SystemPromptCatalog.defaultPromptFile
 
         self.init(
             version: version,
             cloudModel: resolvedCloudModel,
             localModel: resolvedLocalModel,
+            systemPrompt: resolvedSystemPrompt,
             useCloud: useCloud,
             updatedAt: updatedAt
         )
@@ -72,6 +79,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         try container.encode(version, forKey: .version)
         try container.encode(cloudModel, forKey: .cloudModel)
         try container.encode(localModel, forKey: .localModel)
+        try container.encode(systemPrompt, forKey: .systemPrompt)
         try container.encode(useCloud, forKey: .useCloud)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -81,6 +89,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
             version: 2,
             cloudModel: configuration.openAIModel,
             localModel: configuration.ollamaModel,
+            systemPrompt: configuration.systemPrompt,
             useCloud: configuration.provider == .openai,
             updatedAt: Self.timestamp(from: now)
         )
@@ -97,22 +106,25 @@ public struct RuntimeConfigPatch: Sendable, Equatable {
     public let model: String?
     public let cloudModel: String?
     public let localModel: String?
+    public let systemPrompt: String?
     public let useCloud: Bool?
 
     public init(
         model: String? = nil,
         cloudModel: String? = nil,
         localModel: String? = nil,
+        systemPrompt: String? = nil,
         useCloud: Bool? = nil
     ) {
         self.model = model
         self.cloudModel = cloudModel
         self.localModel = localModel
+        self.systemPrompt = systemPrompt
         self.useCloud = useCloud
     }
 
     var isEmpty: Bool {
-        model == nil && cloudModel == nil && localModel == nil && useCloud == nil
+        model == nil && cloudModel == nil && localModel == nil && systemPrompt == nil && useCloud == nil
     }
 }
 
@@ -272,6 +284,8 @@ public actor RuntimeConfigProvider {
             ?? (resolvedUseCloud ? (patchedModel ?? runtimeConfig.cloudModel) : runtimeConfig.cloudModel)
         let resolvedLocalModel = (patch.localModel?.trimmingCharacters(in: .whitespacesAndNewlines))
             ?? (resolvedUseCloud ? runtimeConfig.localModel : (patchedModel ?? runtimeConfig.localModel))
+        let resolvedSystemPrompt = patch.systemPrompt?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? runtimeConfig.systemPrompt
 
         if resolvedCloudModel.isEmpty {
             throw DictatorError.configUpdateFailed("cloud model cannot be empty")
@@ -279,11 +293,15 @@ public actor RuntimeConfigProvider {
         if resolvedLocalModel.isEmpty {
             throw DictatorError.configUpdateFailed("local model cannot be empty")
         }
+        if resolvedSystemPrompt.isEmpty {
+            throw DictatorError.configUpdateFailed("system prompt cannot be empty")
+        }
 
         let next = RuntimeConfigFile(
             version: runtimeConfig.version,
             cloudModel: resolvedCloudModel,
             localModel: resolvedLocalModel,
+            systemPrompt: resolvedSystemPrompt,
             useCloud: resolvedUseCloud,
             updatedAt: RuntimeConfigFile.timestamp(from: now)
         )

@@ -16,19 +16,22 @@ public struct LLMRuntimeConfiguration: Sendable {
     public let ollamaModel: String
     public let fallback: Fallback
     public let openAIModel: String
+    public let systemPrompt: String
 
     public init(
         provider: Provider,
         ollamaHost: String,
         ollamaModel: String,
         fallback: Fallback,
-        openAIModel: String
+        openAIModel: String,
+        systemPrompt: String = SystemPromptCatalog.defaultPromptFile
     ) {
         self.provider = provider
         self.ollamaHost = ollamaHost
         self.ollamaModel = ollamaModel
         self.fallback = fallback
         self.openAIModel = openAIModel
+        self.systemPrompt = systemPrompt
     }
 
     public static func fromEnvironment(
@@ -40,13 +43,15 @@ public struct LLMRuntimeConfiguration: Sendable {
         let ollamaHost = normalizedNonEmpty(env["DICTATOR_OLLAMA_HOST"]) ?? "http://127.0.0.1:11434"
         let ollamaModel = normalizedNonEmpty(env["DICTATOR_OLLAMA_MODEL"]) ?? "qwen2.5:7b-instruct"
         let openAIModel = normalizedNonEmpty(env["OPENAI_MODEL"]) ?? "gpt-4.1-mini"
+        let systemPrompt = normalizedNonEmpty(env["DICTATOR_SYSTEM_PROMPT"]) ?? SystemPromptCatalog.defaultPromptFile
 
         var resolved = LLMRuntimeConfiguration(
             provider: provider,
             ollamaHost: trimTrailingSlash(ollamaHost),
             ollamaModel: ollamaModel,
             fallback: fallback,
-            openAIModel: openAIModel
+            openAIModel: openAIModel,
+            systemPrompt: systemPrompt
         )
 
         guard let runtimeOverride else {
@@ -59,7 +64,8 @@ public struct LLMRuntimeConfiguration: Sendable {
                 ollamaHost: resolved.ollamaHost,
                 ollamaModel: runtimeOverride.localModel,
                 fallback: resolved.fallback,
-                openAIModel: runtimeOverride.cloudModel
+                openAIModel: runtimeOverride.cloudModel,
+                systemPrompt: runtimeOverride.systemPrompt
             )
         } else {
             resolved = LLMRuntimeConfiguration(
@@ -67,7 +73,8 @@ public struct LLMRuntimeConfiguration: Sendable {
                 ollamaHost: resolved.ollamaHost,
                 ollamaModel: runtimeOverride.localModel,
                 fallback: resolved.fallback,
-                openAIModel: runtimeOverride.cloudModel
+                openAIModel: runtimeOverride.cloudModel,
+                systemPrompt: runtimeOverride.systemPrompt
             )
         }
 

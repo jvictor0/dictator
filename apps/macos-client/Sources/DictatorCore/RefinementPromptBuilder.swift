@@ -1,7 +1,7 @@
 import Foundation
 
 enum RefinementPromptBuilder {
-    static let instructions = """
+    static let fallbackInstructions = """
     You are an intent-preserving voice transcription refiner.
 
     Input context:

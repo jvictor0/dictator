@@ -505,14 +505,24 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 try await manager.set(name: name, value: value)
             }
         )
+        let systemPromptsTab = LaunchpadSystemPromptsOverlayTab(
+            loadPromptDetails: { [weak self] in
+                guard let self else {
+                    throw DictatorError.configInteractionUnavailable
+                }
+                let runtimeConfig = await self.runtimeConfigProvider.currentRuntimeConfig()
+                let promptCatalog = SystemPromptCatalog()
+                let prompt = promptCatalog.resolvePrompt(named: runtimeConfig.systemPrompt)
+                return LaunchpadSystemPromptsOverlayTab.PromptDetails(
+                    fileName: runtimeConfig.systemPrompt,
+                    body: prompt
+                )
+            }
+        )
         let overlayController = LaunchpadFullscreenOverlayController(
             tabs: [
                 configTab,
-                LaunchpadPlaceholderTab(
-                    id: "actions",
-                    title: "Actions",
-                    description: "Placeholder content for Actions tab."
-                ),
+                systemPromptsTab,
                 LaunchpadPlaceholderTab(
                     id: "settings",
                     title: "Settings",
@@ -822,6 +832,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     optionsSource: .ollama,
                     runtimeConfigProvider: runtimeConfigProvider,
                     host: configuration.ollamaHost
+                ),
+                RuntimeSystemPromptConfiguration(
+                    name: "System Prompt",
+                    currentValue: currentConfig.systemPrompt,
+                    defaultValue: defaultConfig.systemPrompt,
+                    runtimeConfigProvider: runtimeConfigProvider
                 )
             ]
         )

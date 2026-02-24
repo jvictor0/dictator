@@ -96,6 +96,41 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
         XCTAssertFalse(inMemory.useCloud)
     }
 
+    func testSystemPromptConfigurationUsesPromptDirectoryFiles() async throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let promptsDir = tempDir.appendingPathComponent("prompts/system-prompts", isDirectory: true)
+        try FileManager.default.createDirectory(at: promptsDir, withIntermediateDirectories: true)
+        try "v1".write(to: promptsDir.appendingPathComponent("intent_refiner_v1.md"), atomically: true, encoding: .utf8)
+        try "v2".write(to: promptsDir.appendingPathComponent("intent_refiner_v2.md"), atomically: true, encoding: .utf8)
+
+        let provider = RuntimeConfigProvider(
+            store: RuntimeConfigStore(fileURL: tempDir.appendingPathComponent("runtime-config.json")),
+            defaultStore: nil,
+            environment: [:]
+        )
+
+        let manager = RuntimeConfigurationManager(
+            configurations: [
+                RuntimeSystemPromptConfiguration(
+                    name: "System Prompt",
+                    currentValue: "intent_refiner_v1.md",
+                    defaultValue: "intent_refiner_v1.md",
+                    runtimeConfigProvider: provider,
+                    promptCatalog: SystemPromptCatalog(directoryURL: promptsDir)
+                )
+            ]
+        )
+
+        let options = try await manager.getOptions(name: "System Prompt")
+        XCTAssertEqual(options, [.string("intent_refiner_v1.md"), .string("intent_refiner_v2.md")])
+
+        try await manager.set(name: "System Prompt", value: .string("intent_refiner_v2.md"))
+        let inMemory = await provider.currentRuntimeConfig()
+        XCTAssertEqual(inMemory.systemPrompt, "intent_refiner_v2.md")
+    }
+
     private func makeTempDir() throws -> URL {
         let base = FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent(UUID().uuidString, isDirectory: true)

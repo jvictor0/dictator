@@ -3,11 +3,18 @@ import Foundation
 public final class OllamaRefinementEngine: RefinementEngine {
     private let host: String
     private let model: String
+    private let systemPrompt: String
     private let session: URLSession
 
-    public init(host: String = "http://127.0.0.1:11434", model: String = "qwen2.5:7b-instruct", session: URLSession = .shared) {
+    public init(
+        host: String = "http://127.0.0.1:11434",
+        model: String = "qwen2.5:7b-instruct",
+        systemPrompt: String? = nil,
+        session: URLSession = .shared
+    ) {
         self.host = host
         self.model = model
+        self.systemPrompt = systemPrompt ?? RefinementPromptBuilder.fallbackInstructions
         self.session = session
     }
 
@@ -18,7 +25,7 @@ public final class OllamaRefinementEngine: RefinementEngine {
                 rawTranscript: request.raw_transcript,
                 optionalContext: request.optional_context ?? [:]
             ),
-            system: RefinementPromptBuilder.instructions,
+            system: systemPrompt,
             stream: false
         )
 

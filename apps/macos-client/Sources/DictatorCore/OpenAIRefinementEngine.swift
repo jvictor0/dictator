@@ -2,11 +2,18 @@ import Foundation
 
 public final class OpenAIRefinementEngine: RefinementEngine {
     private let model: String
+    private let systemPrompt: String
     private let secretStore: SecretStore
     private let session: URLSession
 
-    public init(model: String = "gpt-4.1-mini", secretStore: SecretStore, session: URLSession = .shared) {
+    public init(
+        model: String = "gpt-4.1-mini",
+        systemPrompt: String? = nil,
+        secretStore: SecretStore,
+        session: URLSession = .shared
+    ) {
         self.model = model
+        self.systemPrompt = systemPrompt ?? RefinementPromptBuilder.fallbackInstructions
         self.secretStore = secretStore
         self.session = session
     }
@@ -18,7 +25,7 @@ public final class OpenAIRefinementEngine: RefinementEngine {
 
         let payload = ResponsesPayload(
             model: model,
-            instructions: RefinementPromptBuilder.instructions,
+            instructions: systemPrompt,
             input: Self.buildInput(rawTranscript: request.raw_transcript, optionalContext: request.optional_context ?? [:])
         )
         var urlRequest = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)

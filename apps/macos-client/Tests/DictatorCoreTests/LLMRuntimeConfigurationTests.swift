@@ -9,6 +9,7 @@ final class LLMRuntimeConfigurationTests: XCTestCase {
         XCTAssertEqual(config.ollamaModel, "qwen2.5:7b-instruct")
         XCTAssertEqual(config.fallback, .openai)
         XCTAssertEqual(config.openAIModel, "gpt-4.1-mini")
+        XCTAssertEqual(config.systemPrompt, "intent_refiner_v1.md")
     }
 
     func testFromEnvironmentNormalizesAndTrims() {
@@ -25,6 +26,7 @@ final class LLMRuntimeConfigurationTests: XCTestCase {
         XCTAssertEqual(config.ollamaModel, "qwen2.5-coder:7b")
         XCTAssertEqual(config.fallback, .none)
         XCTAssertEqual(config.openAIModel, "gpt-4.1")
+        XCTAssertEqual(config.systemPrompt, "intent_refiner_v1.md")
     }
 
     func testRuntimeOverrideWinsForModelAndProvider() {
@@ -46,5 +48,6 @@ final class LLMRuntimeConfigurationTests: XCTestCase {
         XCTAssertEqual(config.provider, .openai)
         XCTAssertEqual(config.openAIModel, "gpt-4.1")
         XCTAssertEqual(config.ollamaModel, "qwen2.5:7b-instruct")
+        XCTAssertEqual(config.systemPrompt, "intent_refiner_v1.md")
     }
 }
