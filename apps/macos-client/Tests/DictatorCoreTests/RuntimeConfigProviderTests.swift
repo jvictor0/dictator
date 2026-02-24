@@ -8,11 +8,18 @@ final class RuntimeConfigProviderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
-        let seed = RuntimeConfigFile(version: 1, model: "gpt-4.1", useCloud: true, updatedAt: "2026-02-23T00:00:00Z")
+        let seed = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4.1",
+            localModel: "qwen2.5:7b-instruct",
+            useCloud: true,
+            updatedAt: "2026-02-23T00:00:00Z"
+        )
         try RuntimeConfigStore(fileURL: fileURL).save(seed)
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
+            defaultStore: nil,
             environment: [
                 "DICTATOR_LLM_PROVIDER": "ollama",
                 "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
@@ -33,6 +40,7 @@ final class RuntimeConfigProviderTests: XCTestCase {
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
+            defaultStore: nil,
             environment: [
                 "DICTATOR_LLM_PROVIDER": "ollama",
                 "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
@@ -58,15 +66,27 @@ final class RuntimeConfigProviderTests: XCTestCase {
         let primaryURL = tempDir.appendingPathComponent("runtime-config.json")
         let safeURL = tempDir.appendingPathComponent("runtime-config.safe")
 
-        let primary = RuntimeConfigFile(version: 1, model: "gpt-4o-mini", useCloud: true, updatedAt: "2026-02-24T00:00:00Z")
-        let safe = RuntimeConfigFile(version: 1, model: "qwen2.5:7b-instruct", useCloud: false, updatedAt: "2026-02-24T00:05:00Z")
+        let primary = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4o-mini",
+            localModel: "qwen2.5:7b-instruct",
+            useCloud: true,
+            updatedAt: "2026-02-24T00:00:00Z"
+        )
+        let safe = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4.1-mini",
+            localModel: "qwen2.5:7b-instruct",
+            useCloud: false,
+            updatedAt: "2026-02-24T00:05:00Z"
+        )
 
         let primaryStore = RuntimeConfigStore(fileURL: primaryURL)
         let safeStore = RuntimeConfigStore(fileURL: safeURL)
         try primaryStore.save(primary)
         try safeStore.save(safe)
 
-        let provider = RuntimeConfigProvider(store: primaryStore, environment: [:])
+        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil, environment: [:])
         let loaded = try await provider.loadFromStoreIntoMemory(safeStore)
         XCTAssertEqual(loaded, safe)
 
@@ -75,6 +95,68 @@ final class RuntimeConfigProviderTests: XCTestCase {
 
         let primaryPersisted = try XCTUnwrap(try primaryStore.load())
         XCTAssertEqual(primaryPersisted, primary)
+    }
+
+    func testStartupDefaultsComeFromSafeStoreWhenPrimaryMissing() async throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let primaryURL = tempDir.appendingPathComponent("runtime-config.json")
+        let safeURL = tempDir.appendingPathComponent("runtime-config.safe")
+
+        let safe = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4.1-mini",
+            localModel: "qwen2.5:7b-instruct",
+            useCloud: false,
+            updatedAt: "2026-02-24T00:05:00Z"
+        )
+        try RuntimeConfigStore(fileURL: safeURL).save(safe)
+
+        let provider = RuntimeConfigProvider(
+            store: RuntimeConfigStore(fileURL: primaryURL),
+            defaultStore: RuntimeConfigStore(fileURL: safeURL),
+            environment: [
+                "DICTATOR_LLM_PROVIDER": "openai",
+                "OPENAI_MODEL": "gpt-4.1-mini"
+            ]
+        )
+
+        let startupDefault = await provider.startupDefaultConfig()
+        XCTAssertEqual(startupDefault, safe)
+
+        let current = await provider.currentRuntimeConfig()
+        XCTAssertEqual(current, safe)
+    }
+
+    func testApplyInMemoryPatchDoesNotPersistToPrimaryFile() async throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let primaryURL = tempDir.appendingPathComponent("runtime-config.json")
+        let primary = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4.1-mini",
+            localModel: "qwen2.5:7b-instruct",
+            useCloud: true,
+            updatedAt: "2026-02-24T00:00:00Z"
+        )
+        let primaryStore = RuntimeConfigStore(fileURL: primaryURL)
+        try primaryStore.save(primary)
+
+        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil, environment: [:])
+        let updated = try await provider.applyInMemoryPatch(RuntimeConfigPatch(model: "qwen2.5:7b-instruct", useCloud: false))
+        XCTAssertEqual(updated.model, "qwen2.5:7b-instruct")
+        XCTAssertFalse(updated.useCloud)
+        XCTAssertEqual(updated.localModel, "qwen2.5:7b-instruct")
+        XCTAssertEqual(updated.cloudModel, "gpt-4.1-mini")
+
+        let inMemory = await provider.currentRuntimeConfig()
+        XCTAssertEqual(inMemory.model, "qwen2.5:7b-instruct")
+        XCTAssertFalse(inMemory.useCloud)
+
+        let persisted = try XCTUnwrap(try primaryStore.load())
+        XCTAssertEqual(persisted, primary)
     }
 
     private func makeTempDir() throws -> URL {

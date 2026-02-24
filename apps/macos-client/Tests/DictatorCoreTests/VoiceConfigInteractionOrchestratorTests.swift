@@ -10,6 +10,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
+            defaultStore: nil,
             environment: [
                 "DICTATOR_LLM_PROVIDER": "ollama",
                 "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
@@ -44,8 +45,8 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         XCTAssertEqual(config.openAIModel, "gpt-4.1-mini")
 
         let persisted = try XCTUnwrap(try RuntimeConfigStore(fileURL: fileURL).load())
-        XCTAssertEqual(persisted.model, "gpt-4.1-mini")
-        XCTAssertTrue(persisted.useCloud)
+        XCTAssertEqual(persisted.model, "qwen2.5:7b-instruct")
+        XCTAssertFalse(persisted.useCloud)
     }
 
     func testInteractionNoChangeDoesNotMutate() async throws {
@@ -53,7 +54,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
 
-        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), environment: [:])
+        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil, environment: [:])
         let before = await provider.currentRuntimeConfig()
 
         let orchestrator = VoiceConfigInteractionOrchestrator(
@@ -82,7 +83,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
 
-        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), environment: [:])
+        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil, environment: [:])
 
         let orchestrator = VoiceConfigInteractionOrchestrator(
             sttEngine: StubSTTEngine(transcript: "switch model to qwen2.5"),
@@ -99,8 +100,6 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         )
 
         XCTAssertEqual(result.runtime_config.model, "qwen2.5:7b-instruct")
-        let persisted = try XCTUnwrap(try RuntimeConfigStore(fileURL: fileURL).load())
-        XCTAssertEqual(persisted.model, "qwen2.5:7b-instruct")
     }
 
     func testInteractionValidationErrorDoesNotMutateConfig() async throws {
@@ -108,7 +107,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
 
-        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), environment: [:])
+        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil, environment: [:])
         let before = await provider.currentRuntimeConfig()
 
         let orchestrator = VoiceConfigInteractionOrchestrator(

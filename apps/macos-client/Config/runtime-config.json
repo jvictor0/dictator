@@ -1,6 +1,7 @@
 {
-  "model" : "gpt-4.1-mini",
+  "cloud_model" : "gpt-4.1-mini",
+  "local_model" : "qwen2.5:7b-instruct",
   "updated_at" : "2026-02-24T05:43:59Z",
   "use_cloud" : true,
-  "version" : 1
+  "version" : 2
 }

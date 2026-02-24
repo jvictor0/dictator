@@ -1,4 +1,5 @@
 import XCTest
+import DictatorCore
 @testable import DictatorApp
 
 final class LaunchpadTests: XCTestCase {
@@ -348,6 +349,87 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertEqual(selectedIndices, [1])
     }
 
+    @MainActor
+    func testOverlayControllerRoutesArrowKeysToVisibleTab() async {
+        let tab = FakeOverlayTab(id: "config", title: "config")
+        let controller = LaunchpadFullscreenOverlayController(tabs: [tab])
+
+        let hiddenHandled = await controller.handleOverlayKey(.up)
+        XCTAssertFalse(hiddenHandled)
+        XCTAssertTrue(tab.handledKeys.isEmpty)
+
+        controller.show()
+        let visibleHandled = await controller.handleOverlayKey(.right)
+        XCTAssertTrue(visibleHandled)
+        XCTAssertEqual(tab.handledKeys, [.right])
+        controller.hide()
+    }
+
+    @MainActor
+    func testConfigOverlayTabUsesArrowKeysForSelectionAndOptionCycling() async throws {
+        var snapshots: [RuntimeConfigurationSnapshot] = [
+            .init(
+                name: "Cloud Model",
+                currentValue: .string("qwen2.5:7b-instruct"),
+                defaultValue: .string("qwen2.5:7b-instruct"),
+                options: [.string("qwen2.5:7b-instruct"), .string("llama3.2")]
+            ),
+            .init(
+                name: "Use Cloud",
+                currentValue: .bool(false),
+                defaultValue: .bool(false),
+                options: [.bool(false), .bool(true)]
+            )
+        ]
+        var setCalls: [(String, RuntimeConfigurationValue)] = []
+        var getOptionsCalls = 0
+
+        let tab = LaunchpadConfigOverlayTab(
+            listConfigs: { snapshots },
+            getOptionsForConfig: { name in
+                getOptionsCalls += 1
+                return snapshots.first(where: { $0.name == name })?.options ?? []
+            },
+            setConfig: { name, value in
+                setCalls.append((name, value))
+                guard let index = snapshots.firstIndex(where: { $0.name == name }) else {
+                    return
+                }
+                snapshots[index] = .init(
+                    name: snapshots[index].name,
+                    currentValue: value,
+                    defaultValue: snapshots[index].defaultValue,
+                    options: snapshots[index].options
+                )
+            }
+        )
+
+        _ = tab.makeContentView()
+        try await Task.sleep(nanoseconds: 40_000_000)
+
+        let handledRightForModel = await tab.handleOverlayKey(.right)
+        XCTAssertTrue(handledRightForModel)
+        XCTAssertEqual(setCalls.first?.0, "Cloud Model")
+        XCTAssertEqual(setCalls.first?.1, .string("llama3.2"))
+        XCTAssertEqual(getOptionsCalls, 1)
+
+        _ = await tab.handleOverlayKey(.right)
+        XCTAssertEqual(getOptionsCalls, 1)
+
+        _ = await tab.handleOverlayKey(.down)
+        let handledRightForBool = await tab.handleOverlayKey(.right)
+        XCTAssertTrue(handledRightForBool)
+        XCTAssertEqual(setCalls.last?.0, "Use Cloud")
+        XCTAssertEqual(setCalls.last?.1, .bool(true))
+        XCTAssertEqual(getOptionsCalls, 2)
+
+        tab.overlayDidClose()
+        _ = tab.makeContentView()
+        try await Task.sleep(nanoseconds: 40_000_000)
+        _ = await tab.handleOverlayKey(.right)
+        XCTAssertEqual(getOptionsCalls, 3)
+    }
+
     func testLaunchpadCellRepeatsWhileHeld() {
         let bus = RenderInvalidationBus()
         let exp = expectation(description: "repeats")
@@ -444,5 +526,26 @@ private final class FakeControlLayer: LaunchpadControlLayer {
 
     func allCoordinatesForRendering() -> [PadCoordinate] {
         [PadCoordinate(x: 1, y: 9)]
+    }
+}
+
+@MainActor
+private final class FakeOverlayTab: LaunchpadOverlayTab {
+    let id: String
+    let title: String
+    var handledKeys: [KeyboardKey] = []
+
+    init(id: String, title: String) {
+        self.id = id
+        self.title = title
+    }
+
+    func makeContentView() -> NSView {
+        NSView()
+    }
+
+    func handleOverlayKey(_ key: KeyboardKey) async -> Bool {
+        handledKeys.append(key)
+        return true
     }
 }

@@ -106,7 +106,7 @@ public final class VoiceConfigInteractionOrchestrator: Sendable {
                 model: resolvedModel,
                 useCloud: patch.useCloud
             )
-            let updated = try await runtimeConfigProvider.applyPatch(validatedPatch)
+            let updated = try await runtimeConfigProvider.applyInMemoryPatch(validatedPatch)
             return VoiceConfigInteractionResult(
                 transcript: transcript,
                 decision: VoiceConfigDecision.Kind.update.rawValue,

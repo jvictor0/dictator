@@ -77,6 +77,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var recordingFlow: RecordingFlow?
     private let shiftLatchStateLock = NSLock()
     private var shiftLatchState: ShiftLatchState = .unpressed
+    private var runtimeConfigurationManager: RuntimeConfigurationManager?
 
     override init() {
         super.init()
@@ -124,6 +125,14 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             self.setupLaunchpadIntegration()
+        }
+
+        Task { @MainActor in
+            do {
+                _ = try await self.runtimeConfigurationManagerInstance()
+            } catch {
+                TraceLogger.log("runtime configuration manager startup failed: \(error)")
+            }
         }
     }
 
@@ -493,13 +502,32 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         let invalidationBus = RenderInvalidationBus()
         let pageController = LaunchpadPageController(invalidationBus: invalidationBus)
+        let configTab = LaunchpadConfigOverlayTab(
+            listConfigs: { [weak self] in
+                guard let self else {
+                    throw DictatorError.configInteractionUnavailable
+                }
+                let manager = try await self.runtimeConfigurationManagerInstance()
+                return try await manager.list()
+            },
+            getOptionsForConfig: { [weak self] name in
+                guard let self else {
+                    throw DictatorError.configInteractionUnavailable
+                }
+                let manager = try await self.runtimeConfigurationManagerInstance()
+                return try await manager.getOptions(name: name)
+            },
+            setConfig: { [weak self] name, value in
+                guard let self else {
+                    throw DictatorError.configInteractionUnavailable
+                }
+                let manager = try await self.runtimeConfigurationManagerInstance()
+                try await manager.set(name: name, value: value)
+            }
+        )
         let overlayController = LaunchpadFullscreenOverlayController(
             tabs: [
-                LaunchpadPlaceholderTab(
-                    id: "home",
-                    title: "Home",
-                    description: "Placeholder content for Home tab."
-                ),
+                configTab,
                 LaunchpadPlaceholderTab(
                     id: "actions",
                     title: "Actions",
@@ -831,9 +859,28 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func dispatchLaunchpadKeystroke(_ key: KeyboardKey, baseModifiers: Set<KeyboardModifier>) {
+        if isOverlayNavigationKey(key) {
+            Task { @MainActor in
+                let handledByOverlay = await launchpadOverlayController?.handleOverlayKey(key) ?? false
+                if handledByOverlay {
+                    TraceLogger.log("overlay handled launchpad key=\(key.rawValue)")
+                    return
+                }
+
+                var modifiers = baseModifiers
+                modifiers.formUnion(self.modifiersForKeyPress(key))
+                _ = self.keyboardInjector.send(key, modifiers: modifiers)
+            }
+            return
+        }
+
         var modifiers = baseModifiers
         modifiers.formUnion(modifiersForKeyPress(key))
         _ = keyboardInjector.send(key, modifiers: modifiers)
+    }
+
+    private func isOverlayNavigationKey(_ key: KeyboardKey) -> Bool {
+        key == .up || key == .down || key == .left || key == .right
     }
 
     @MainActor
@@ -846,14 +893,60 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            let loaded = try await runtimeConfigProvider.loadFromStoreIntoMemory(safeRuntimeConfigStore)
+            let manager = try await runtimeConfigurationManagerInstance()
+            try await manager.resetToDefaults()
+            let loaded = await runtimeConfigProvider.currentRuntimeConfig()
             let mode = loaded.useCloud ? "cloud" : "local"
             menuBarController?.setState("Safe config loaded: \(mode) (\(loaded.model))")
-            TraceLogger.log("safe runtime config loaded into memory (model=\(loaded.model), use_cloud=\(loaded.useCloud))")
+            TraceLogger.log("safe runtime defaults applied in memory (model=\(loaded.model), use_cloud=\(loaded.useCloud))")
         } catch {
             menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
             TraceLogger.log("safe runtime restore failed: \(error)")
         }
+    }
+
+    @MainActor
+    private func runtimeConfigurationManagerInstance() async throws -> RuntimeConfigurationManager {
+        if let runtimeConfigurationManager {
+            return runtimeConfigurationManager
+        }
+
+        guard let defaultConfig = try safeRuntimeConfigStore.load() else {
+            throw DictatorError.configUpdateFailed("safe runtime config file is missing")
+        }
+        let currentConfig = await runtimeConfigProvider.currentRuntimeConfig()
+        let configuration = await runtimeConfigProvider.currentConfiguration()
+
+        let manager = RuntimeConfigurationManager(
+            configurations: [
+                RuntimeModelConfiguration(
+                    name: "Cloud Model",
+                    currentValue: currentConfig.cloudModel,
+                    defaultValue: defaultConfig.cloudModel,
+                    target: .cloud,
+                    optionsSource: .openAI(secretStore: secretStore),
+                    runtimeConfigProvider: runtimeConfigProvider,
+                    host: configuration.ollamaHost
+                ),
+                RuntimeBooleanConfiguration(
+                    name: "Use Cloud",
+                    currentValue: currentConfig.useCloud,
+                    defaultValue: defaultConfig.useCloud,
+                    runtimeConfigProvider: runtimeConfigProvider
+                ),
+                RuntimeModelConfiguration(
+                    name: "Local Model",
+                    currentValue: currentConfig.localModel,
+                    defaultValue: defaultConfig.localModel,
+                    target: .local,
+                    optionsSource: .ollama,
+                    runtimeConfigProvider: runtimeConfigProvider,
+                    host: configuration.ollamaHost
+                )
+            ]
+        )
+        runtimeConfigurationManager = manager
+        return manager
     }
 
     private func handleKeyboardDispatchResult(_ result: KeyboardInjector.DispatchResult) {

@@ -57,17 +57,17 @@ public struct LLMRuntimeConfiguration: Sendable {
             resolved = LLMRuntimeConfiguration(
                 provider: .openai,
                 ollamaHost: resolved.ollamaHost,
-                ollamaModel: resolved.ollamaModel,
+                ollamaModel: runtimeOverride.localModel,
                 fallback: resolved.fallback,
-                openAIModel: runtimeOverride.model
+                openAIModel: runtimeOverride.cloudModel
             )
         } else {
             resolved = LLMRuntimeConfiguration(
                 provider: .ollama,
                 ollamaHost: resolved.ollamaHost,
-                ollamaModel: runtimeOverride.model,
+                ollamaModel: runtimeOverride.localModel,
                 fallback: resolved.fallback,
-                openAIModel: resolved.openAIModel
+                openAIModel: runtimeOverride.cloudModel
             )
         }
 

@@ -35,8 +35,9 @@ final class LLMRuntimeConfigurationTests: XCTestCase {
                 "OPENAI_MODEL": "gpt-4.1-mini"
             ],
             runtimeOverride: RuntimeConfigFile(
-                version: 1,
-                model: "gpt-4.1",
+                version: 2,
+                cloudModel: "gpt-4.1",
+                localModel: "qwen2.5:7b-instruct",
                 useCloud: true,
                 updatedAt: "2026-02-23T00:00:00Z"
             )

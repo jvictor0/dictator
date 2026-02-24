@@ -5,10 +5,22 @@ struct LaunchpadOverlayState {
     let selectedTabIndex: Int
 }
 
+@MainActor
 protocol LaunchpadOverlayTab {
     var id: String { get }
     var title: String { get }
     func makeContentView() -> NSView
+    func handleOverlayKey(_ key: KeyboardKey) async -> Bool
+    func overlayDidClose()
+}
+
+extension LaunchpadOverlayTab {
+    func handleOverlayKey(_ key: KeyboardKey) async -> Bool {
+        _ = key
+        return false
+    }
+
+    func overlayDidClose() {}
 }
 
 struct LaunchpadPlaceholderTab: LaunchpadOverlayTab {
@@ -84,6 +96,7 @@ final class LaunchpadFullscreenOverlayController {
 
     func hide() {
         contentController?.resetToInitialTab()
+        contentController?.notifyOverlayDidClose()
         window?.orderOut(nil)
         isVisible = false
         notifyStateChanged()
@@ -102,6 +115,13 @@ final class LaunchpadFullscreenOverlayController {
             notifyStateChanged()
         }
         return true
+    }
+
+    func handleOverlayKey(_ key: KeyboardKey) async -> Bool {
+        guard isVisible else {
+            return false
+        }
+        return await contentController?.handleOverlayKey(key) ?? false
     }
 
     private func ensureWindow() {
@@ -226,6 +246,19 @@ private final class LaunchpadOverlayContentController: NSViewController {
         selectedIndex = sender.selectedSegment
         renderSelectedTab()
         onSelectionChanged?(selectedIndex)
+    }
+
+    func handleOverlayKey(_ key: KeyboardKey) async -> Bool {
+        guard tabs.indices.contains(selectedIndex) else {
+            return false
+        }
+        return await tabs[selectedIndex].handleOverlayKey(key)
+    }
+
+    func notifyOverlayDidClose() {
+        for tab in tabs {
+            tab.overlayDidClose()
+        }
     }
 
     private func renderSelectedTab() {
