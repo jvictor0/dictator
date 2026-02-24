@@ -9,11 +9,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         case thinking
     }
 
-    private enum RecordingFlow {
-        case dictation
-        case agentModelMode
-    }
-
     private enum ShiftLatchState {
         case unpressed
         case pressedWillLatchOnRelease
@@ -47,15 +42,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var safeRuntimeConfigStore: RuntimeConfigStore = RuntimeConfigStore(
         fileURL: RuntimeConfigStore.defaultSafeFileURL(environment: ProcessInfo.processInfo.environment)
     )
-    private lazy var voiceConfigInteractionOrchestrator: VoiceConfigInteractionOrchestrator = VoiceConfigInteractionOrchestrator(
-        sttEngine: sttEngine,
-        runtimeConfigProvider: runtimeConfigProvider,
-        secretStore: secretStore
-    )
     private lazy var coreClient: any DictatorCoreClient = PipelineOrchestrator(
         sttEngine: sttEngine,
-        refinementEngine: makeRefinementEngine(),
-        voiceConfigInteractionOrchestrator: voiceConfigInteractionOrchestrator
+        refinementEngine: makeRefinementEngine()
     )
     private lazy var apiClient: APIClient = APIClient(coreClient: coreClient)
 
@@ -74,7 +63,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private let dictationStateLock = NSLock()
     private var dictationState: DictationState = .idle
     private var activeDictationTask: Task<DictateCallResult, Error>?
-    private var recordingFlow: RecordingFlow?
     private let shiftLatchStateLock = NSLock()
     private var shiftLatchState: ShiftLatchState = .unpressed
     private var runtimeConfigurationManager: RuntimeConfigurationManager?
@@ -158,11 +146,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         TraceLogger.log("caps-trigger callback started")
 
         if recordingController.isRecording {
-            if recordingFlow == .agentModelMode {
-                await stopRecordingAndApplyAgentModelMode(menuBarController: menuBarController)
-            } else {
-                await stopRecordingAndDictate(menuBarController: menuBarController)
-            }
+            await stopRecordingAndDictate(menuBarController: menuBarController)
         } else {
             await startRecording(menuBarController: menuBarController)
         }
@@ -188,7 +172,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             recordingContext = context.isEmpty ? nil : context
-            recordingFlow = .dictation
             if let dictationContext = recordingContext?["dictation_context"] {
                 TraceLogger.log("captured recording context: \(dictationContext)")
             } else {
@@ -216,7 +199,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         _ = recordingController.toggle()
         recordingContext = nil
-        recordingFlow = nil
         _ = audioRecorder.stop()
         cancelActiveDictationTask()
         setDictationState(.idle)
@@ -276,13 +258,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         let stopResult = audioRecorder.stop()
         switch stopResult {
         case let .failure(error):
-            recordingFlow = nil
             setDictationState(.idle)
             menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
             TraceLogger.log("recording stop failed: \(error)")
             return
         case let .success(capturedAudio):
-            recordingFlow = nil
             let requestContext = recordingContext
             recordingContext = nil
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
@@ -573,11 +553,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     self?.triggerAppReload()
                 }
             },
-            onChangeAgentModelMode: { [weak self] in
-                Task { @MainActor in
-                    await self?.handleLaunchpadChangeAgentModelMode()
-                }
-            },
             onLoadSafeRuntimeConfig: { [weak self] in
                 Task { @MainActor in
                     await self?.handleLaunchpadLoadSafeRuntimeConfig()
@@ -732,11 +707,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             }
         case .stop:
             if currentDictationState() == .recording && recordingController.isRecording {
-                if recordingFlow == .agentModelMode {
-                    await stopRecordingAndApplyAgentModelMode(menuBarController: menuBarController)
-                } else {
-                    await stopRecordingAndDictate(menuBarController: menuBarController)
-                }
+                await stopRecordingAndDictate(menuBarController: menuBarController)
             }
         case .cancel:
             cancelRecording(menuBarController: menuBarController)
@@ -744,100 +715,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             if currentDictationState() == .thinking {
                 cancelThinking(menuBarController: menuBarController)
             } else if recordingController.isRecording {
-                if recordingFlow == .agentModelMode {
-                    await stopRecordingAndApplyAgentModelMode(menuBarController: menuBarController)
-                } else {
-                    await stopRecordingAndDictate(menuBarController: menuBarController)
-                }
+                await stopRecordingAndDictate(menuBarController: menuBarController)
             } else {
                 await startRecording(menuBarController: menuBarController)
-            }
-        }
-    }
-
-    @MainActor
-    private func handleLaunchpadChangeAgentModelMode() async {
-        if currentDictationState() == .thinking {
-            menuBarController?.setState("Busy: waiting for current operation")
-            return
-        }
-
-        if recordingController.isRecording {
-            if recordingFlow == .agentModelMode {
-                await stopRecordingAndApplyAgentModelMode(menuBarController: menuBarController)
-            } else {
-                menuBarController?.setState("Busy: dictation recording active")
-            }
-            return
-        }
-
-        await startRecordingForAgentModelMode(menuBarController: menuBarController)
-    }
-
-    @MainActor
-    private func startRecordingForAgentModelMode(menuBarController: MenuBarController?) async {
-        menuBarController?.setState("Listening for model mode...")
-        switch await audioRecorder.start() {
-        case .success:
-            recordingContext = nil
-            recordingFlow = .agentModelMode
-            _ = recordingController.toggle()
-            setDictationState(.recording)
-            menuBarController?.setIndicatorState(.recording)
-            menuBarController?.setState("Recording model mode command")
-            TraceLogger.log("agent model mode recording started")
-        case let .failure(error):
-            recordingFlow = nil
-            setDictationState(.idle)
-            menuBarController?.setIndicatorState(.idle)
-            menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
-            TraceLogger.log("agent model mode recording start failed: \(error)")
-        }
-    }
-
-    @MainActor
-    private func stopRecordingAndApplyAgentModelMode(menuBarController: MenuBarController?) async {
-        _ = recordingController.toggle()
-        menuBarController?.setIndicatorState(.idle)
-        menuBarController?.setState("Applying model mode...")
-
-        let stopResult = audioRecorder.stop()
-        switch stopResult {
-        case let .failure(error):
-            recordingFlow = nil
-            setDictationState(.idle)
-            menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
-            TraceLogger.log("agent model mode recording stop failed: \(error)")
-            return
-        case let .success(capturedAudio):
-            recordingFlow = nil
-            setDictationState(.thinking)
-            menuBarController?.setIndicatorState(.refining)
-            menuBarController?.setState("Interpreting model mode request...")
-
-            do {
-                let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
-                let request = VoiceConfigInteractionRequest(
-                    audio_b64: capturedAudio.data.base64EncodedString(),
-                    sample_rate: capturedAudio.sampleRate,
-                    locale: locale,
-                    session_id: sessionID
-                )
-                let result = try await apiClient.interactForRuntimeConfig(request)
-                setDictationState(.idle)
-                menuBarController?.setIndicatorState(.idle)
-                if result.updated {
-                    let mode = result.runtime_config.useCloud ? "cloud" : "local"
-                    menuBarController?.setState("Model mode updated: \(mode) (\(result.runtime_config.model))")
-                } else {
-                    menuBarController?.setState("No model mode change")
-                }
-                TraceLogger.log("agent model mode result updated=\(result.updated) model=\(result.runtime_config.model) use_cloud=\(result.runtime_config.useCloud)")
-            } catch {
-                setDictationState(.idle)
-                menuBarController?.setIndicatorState(.idle)
-                menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
-                TraceLogger.log("agent model mode request failed: \(error)")
             }
         }
     }

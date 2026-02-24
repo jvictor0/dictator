@@ -265,7 +265,6 @@ final class LaunchpadTests: XCTestCase {
             onDictationCommand: nil,
             onContextualBackspace: nil,
             onAppReload: nil,
-            onChangeAgentModelMode: nil,
             onLoadSafeRuntimeConfig: nil,
             onToggleFullscreenOverlay: {
                 toggleCount += 1
