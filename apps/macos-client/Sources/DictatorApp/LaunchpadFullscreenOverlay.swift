@@ -66,6 +66,7 @@ final class LaunchpadFullscreenOverlayController {
     private let selectedTabDefaultsKey: String
     private var window: NSWindow?
     private var contentController: LaunchpadOverlayContentController?
+    private var previousPresentationOptions: NSApplication.PresentationOptions?
     private(set) var isVisible = false
     var onStateChanged: ((LaunchpadOverlayState) -> Void)?
     var tabCount: Int { tabs.count }
@@ -102,6 +103,10 @@ final class LaunchpadFullscreenOverlayController {
         }
         window.setFrame(activeScreenFrame(), display: true)
         window.orderFront(nil)
+        if previousPresentationOptions == nil {
+            previousPresentationOptions = NSApp.presentationOptions
+        }
+        NSApp.presentationOptions = NSApp.presentationOptions.union([.hideDock])
         isVisible = true
         notifyStateChanged()
     }
@@ -109,6 +114,10 @@ final class LaunchpadFullscreenOverlayController {
     func hide() {
         contentController?.notifyOverlayDidClose()
         window?.orderOut(nil)
+        if let previousPresentationOptions {
+            NSApp.presentationOptions = previousPresentationOptions
+            self.previousPresentationOptions = nil
+        }
         isVisible = false
         notifyStateChanged()
     }
@@ -180,10 +189,10 @@ final class LaunchpadFullscreenOverlayController {
 
     private func activeScreenFrame() -> NSRect {
         if let keyWindowScreen = NSApp.keyWindow?.screen {
-            return keyWindowScreen.frame
+            return keyWindowScreen.visibleFrame
         }
         if let mainScreen = NSScreen.main {
-            return mainScreen.frame
+            return mainScreen.visibleFrame
         }
         return NSRect(x: 0, y: 0, width: 1440, height: 900)
     }

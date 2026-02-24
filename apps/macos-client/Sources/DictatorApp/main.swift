@@ -66,6 +66,10 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private let shiftLatchStateLock = NSLock()
     private var shiftLatchState: ShiftLatchState = .unpressed
     private var runtimeConfigurationManager: RuntimeConfigurationManager?
+    private let interactionBuffer = DictationInteractionBuffer()
+    private var interactionStore: InteractionHistoryStore?
+    private var interactionStoreSetupTask: Task<Void, Never>?
+    private var interactionsOverlayTab: LaunchpadInteractionsOverlayTab?
 
     override init() {
         super.init()
@@ -118,6 +122,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             do {
                 _ = try await self.runtimeConfigurationManagerInstance()
+                await self.setupInteractionStoreIfNeeded()
             } catch {
                 TraceLogger.log("runtime configuration manager startup failed: \(error)")
             }
@@ -271,6 +276,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             menuBarController?.setState("Transcribing + refining...")
 
             do {
+                let runtimeConfiguration = await runtimeConfigProvider.currentConfiguration()
+                let runtimeConfig = await runtimeConfigProvider.currentRuntimeConfig()
                 let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
                 let request = DictateRequest(
                     audio_b64: capturedAudio.data.base64EncodedString(),
@@ -279,6 +286,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     session_id: sessionID,
                     optional_context: requestContext
                 )
+                let pipelineStart = Date()
                 let task = Task { [apiClient] in
                     try await apiClient.dictate(request)
                 }
@@ -292,14 +300,33 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 logRefinementMode(context: requestContext)
                 TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
                 TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
+                let totalPipelineMs = Self.elapsedMs(since: pipelineStart)
                 if dictated.revised_text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    await appendInteraction(
+                        dictatedCall: dictatedCall,
+                        optionalContext: requestContext,
+                        runtimeConfiguration: runtimeConfiguration,
+                        runtimeConfig: runtimeConfig,
+                        insertMs: 0,
+                        totalPipelineMs: totalPipelineMs
+                    )
                     setDictationState(.idle)
                     menuBarController?.setIndicatorState(.idle)
                     menuBarController?.setState("No speech detected")
                     TraceLogger.log("dictate produced empty revised text; skipping insertion")
                     return
                 }
+                let insertStart = Date()
                 let insertResult = ClipboardInserter.insert(dictated.revised_text)
+                let insertMs = Self.elapsedMs(since: insertStart)
+                await appendInteraction(
+                    dictatedCall: dictatedCall,
+                    optionalContext: requestContext,
+                    runtimeConfiguration: runtimeConfiguration,
+                    runtimeConfig: runtimeConfig,
+                    insertMs: insertMs,
+                    totalPipelineMs: totalPipelineMs
+                )
                 switch insertResult {
                 case .success:
                     setDictationState(.idle)
@@ -536,15 +563,17 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 try await manager.set(name: "System Prompt", value: .string(relativePath))
             }
         )
+        let interactionsTab = LaunchpadInteractionsOverlayTab(
+            loadInteractions: { [weak self] in
+                self?.interactionBuffer.snapshot() ?? []
+            }
+        )
+        self.interactionsOverlayTab = interactionsTab
         let overlayController = LaunchpadFullscreenOverlayController(
             tabs: [
                 configTab,
                 systemPromptsTab,
-                LaunchpadPlaceholderTab(
-                    id: "settings",
-                    title: "Settings",
-                    description: "Placeholder content for Settings tab."
-                )
+                interactionsTab
             ]
         )
         let overlayTabSlotCoordinator = LaunchpadOverlayTabSlotCoordinator(
@@ -855,6 +884,18 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     currentValue: currentConfig.systemPrompt,
                     defaultValue: defaultConfig.systemPrompt,
                     runtimeConfigProvider: runtimeConfigProvider
+                ),
+                RuntimeInteractionsBufferConfiguration(
+                    name: "Interactions Buffer",
+                    currentValueBytes: currentConfig.interactionsBufferBytes,
+                    defaultValueBytes: defaultConfig.interactionsBufferBytes,
+                    runtimeConfigProvider: runtimeConfigProvider,
+                    onBytesUpdated: { [weak self] bytes in
+                        self?.interactionBuffer.setMaxBytes(bytes)
+                        Task { [weak self] in
+                            await self?.interactionStore?.setMaxBytes(bytes)
+                        }
+                    }
                 )
             ]
         )
@@ -916,6 +957,124 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         _ = task
         activeDictationTask = nil
         dictationStateLock.unlock()
+    }
+
+    @MainActor
+    private func setupInteractionStoreIfNeeded() async {
+        if let interactionStoreSetupTask {
+            await interactionStoreSetupTask.value
+            return
+        }
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+            let currentConfig = await runtimeConfigProvider.currentRuntimeConfig()
+            interactionBuffer.setMaxBytes(currentConfig.interactionsBufferBytes)
+            let dataDirectoryURL = InteractionDataPathResolver.defaultDataDirectory(
+                environment: ProcessInfo.processInfo.environment
+            )
+            let store = InteractionHistoryStore(
+                buffer: interactionBuffer,
+                dataDirectoryURL: dataDirectoryURL,
+                initialLoadBytes: currentConfig.interactionsBufferBytes,
+                onChanged: { [weak self] in
+                    self?.interactionsOverlayTab?.reloadInteractions()
+                }
+            )
+            interactionStore = store
+            await store.setMaxBytes(currentConfig.interactionsBufferBytes)
+            await store.startInitialLoadIfNeeded()
+        }
+        interactionStoreSetupTask = task
+        await task.value
+    }
+
+    @MainActor
+    private func ensureInteractionStoreReady() async {
+        await setupInteractionStoreIfNeeded()
+        if let interactionStore {
+            await interactionStore.waitUntilReady()
+        }
+    }
+
+    @MainActor
+    private func syncInteractionBufferLimitFromRuntimeConfig() async {
+        let current = await runtimeConfigProvider.currentRuntimeConfig()
+        interactionBuffer.setMaxBytes(current.interactionsBufferBytes)
+        await interactionStore?.setMaxBytes(current.interactionsBufferBytes)
+    }
+
+    @MainActor
+    private func appendInteraction(
+        dictatedCall: DictateCallResult,
+        optionalContext: [String: String]?,
+        runtimeConfiguration: LLMRuntimeConfiguration,
+        runtimeConfig: RuntimeConfigFile,
+        insertMs: Int,
+        totalPipelineMs: Int
+    ) async {
+        let response = dictatedCall.response
+        let effectiveProvider: String
+        if response.edit_summary.localizedCaseInsensitiveContains("OpenAI") {
+            effectiveProvider = "openai"
+        } else if response.edit_summary.localizedCaseInsensitiveContains("Ollama") {
+            effectiveProvider = "ollama"
+        } else {
+            effectiveProvider = runtimeConfiguration.provider.rawValue
+        }
+
+        let effectiveModel = effectiveProvider == LLMRuntimeConfiguration.Provider.openai.rawValue
+            ? runtimeConfiguration.openAIModel
+            : runtimeConfiguration.ollamaModel
+        let mode = Self.interactionMode(rawTranscript: response.raw_transcript, revisedText: response.revised_text, context: optionalContext)
+        let interaction = DictationInteraction(
+            whisperOutput: response.raw_transcript,
+            finalOutput: response.revised_text,
+            mode: mode,
+            systemPromptPath: runtimeConfig.systemPrompt,
+            systemPromptBody: SystemPromptCatalog().resolvePrompt(named: runtimeConfig.systemPrompt),
+            model: effectiveModel,
+            provider: effectiveProvider,
+            optionalContext: optionalContext ?? [:],
+            editSummary: response.edit_summary,
+            uncertaintyFlags: response.uncertainty_flags,
+            timings: DictationInteractionTimings(
+                transcribeMs: dictatedCall.transcribeMs,
+                refineMs: dictatedCall.refineMs,
+                insertMs: insertMs,
+                totalPipelineMs: totalPipelineMs
+            )
+        )
+        await ensureInteractionStoreReady()
+        if let interactionStore {
+            await interactionStore.append(interaction)
+        } else {
+            interactionBuffer.append(interaction)
+            interactionsOverlayTab?.reloadInteractions()
+        }
+    }
+
+    private static func interactionMode(
+        rawTranscript: String,
+        revisedText: String,
+        context: [String: String]?
+    ) -> DictationInteractionMode {
+        let selectedText = context?["selected_text"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !selectedText.isEmpty {
+            return .textReplacement
+        }
+        let normalizedRaw = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedRevised = revisedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedRaw == normalizedRevised {
+            return .rawDictation
+        }
+        return .revision
+    }
+
+    private static func elapsedMs(since start: Date) -> Int {
+        max(0, Int(Date().timeIntervalSince(start) * 1000))
     }
 
     private func cancelActiveDictationTask() {

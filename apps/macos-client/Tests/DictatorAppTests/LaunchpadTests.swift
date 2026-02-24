@@ -391,6 +391,19 @@ final class LaunchpadTests: XCTestCase {
     }
 
     @MainActor
+    func testOverlayControllerTemporarilyHidesDockWhileVisible() async {
+        let tab = FakeOverlayTab(id: "config", title: "config")
+        let controller = LaunchpadFullscreenOverlayController(tabs: [tab])
+        let previous = NSApp.presentationOptions
+
+        controller.show()
+        XCTAssertTrue(NSApp.presentationOptions.contains(.hideDock))
+
+        controller.hide()
+        XCTAssertEqual(NSApp.presentationOptions, previous)
+    }
+
+    @MainActor
     func testConfigOverlayTabUsesArrowKeysForSelectionAndOptionCycling() async throws {
         var snapshots: [RuntimeConfigurationSnapshot] = [
             .init(
@@ -529,6 +542,71 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertTrue(queriedDirectories.contains("alpha"))
     }
 
+    @MainActor
+    func testInteractionsTabDefaultsToLatestAndSupportsUpDownSelection() async {
+        let oldest = makeInteraction(finalOutput: "first")
+        let middle = makeInteraction(finalOutput: "second")
+        let newest = makeInteraction(finalOutput: "third")
+
+        let tab = LaunchpadInteractionsOverlayTab(
+            loadInteractions: { [oldest, middle, newest] }
+        )
+
+        _ = tab.makeContentView()
+        XCTAssertEqual(tab.interactionsCountForTesting(), 3)
+        XCTAssertEqual(tab.selectedInteractionIDForTesting(), newest.id)
+
+        _ = await tab.handleOverlayKey(.up)
+        XCTAssertEqual(tab.selectedInteractionIDForTesting(), middle.id)
+
+        _ = await tab.handleOverlayKey(.up)
+        XCTAssertEqual(tab.selectedInteractionIDForTesting(), oldest.id)
+
+        _ = await tab.handleOverlayKey(.down)
+        XCTAssertEqual(tab.selectedInteractionIDForTesting(), middle.id)
+    }
+
+    @MainActor
+    func testInteractionsTabSupportsPanelFocusAndSectionToggleControls() async {
+        let oldest = makeInteraction(finalOutput: "first")
+        let newest = makeInteraction(finalOutput: "second")
+        let tab = LaunchpadInteractionsOverlayTab(
+            loadInteractions: { [oldest, newest] }
+        )
+
+        _ = tab.makeContentView()
+        XCTAssertEqual(tab.panelFocusForTesting(), "left")
+        XCTAssertEqual(tab.selectedInteractionIDForTesting(), newest.id)
+
+        _ = await tab.handleOverlayKey(.right)
+        XCTAssertEqual(tab.panelFocusForTesting(), "right")
+        XCTAssertEqual(tab.selectedSectionTitleForTesting(), "Metadata")
+
+        _ = await tab.handleOverlayKey(.down)
+        XCTAssertEqual(tab.selectedSectionTitleForTesting(), "Timings")
+
+        let beforeToggle = tab.selectedSectionExpandedForTesting()
+        _ = await tab.handleOverlayKey(.right)
+        let afterToggle = tab.selectedSectionExpandedForTesting()
+        XCTAssertNotEqual(beforeToggle, afterToggle)
+
+        _ = await tab.handleOverlayKey(.left)
+        XCTAssertEqual(tab.panelFocusForTesting(), "left")
+    }
+
+    func testInteractionBufferEvictsOldestWhenTrackedBytesExceedLimit() {
+        let buffer = DictationInteractionBuffer(maxBytes: 20)
+        let first = makeInteraction(whisperOutput: "aaaaaa", finalOutput: "bbbbbb")
+        let second = makeInteraction(whisperOutput: "cccccc", finalOutput: "dddddd")
+
+        buffer.append(first)
+        buffer.append(second)
+
+        let kept = buffer.snapshot()
+        XCTAssertEqual(kept.map(\.id), [second.id])
+        XCTAssertEqual(buffer.currentTrackedBytes(), second.trackedSizeBytes)
+    }
+
     func testLaunchpadCellRepeatsWhileHeld() {
         let bus = RenderInvalidationBus()
         let exp = expectation(description: "repeats")
@@ -649,4 +727,28 @@ private final class FakeOverlayTab: LaunchpadOverlayTab {
         handledKeys.append(key)
         return true
     }
+}
+
+private func makeInteraction(
+    whisperOutput: String = "raw",
+    finalOutput: String = "final"
+) -> DictationInteraction {
+    DictationInteraction(
+        whisperOutput: whisperOutput,
+        finalOutput: finalOutput,
+        mode: .revision,
+        systemPromptPath: "intent_refiner_v1.md",
+        systemPromptBody: "prompt-body",
+        model: "qwen2.5:7b-instruct",
+        provider: "ollama",
+        optionalContext: [:],
+        editSummary: "summary",
+        uncertaintyFlags: [],
+        timings: DictationInteractionTimings(
+            transcribeMs: 1,
+            refineMs: 2,
+            insertMs: 3,
+            totalPipelineMs: 6
+        )
+    )
 }

@@ -346,6 +346,60 @@ public final class RuntimeSystemPromptConfiguration: RuntimeConfiguration, @unch
     }
 }
 
+public final class RuntimeInteractionsBufferConfiguration: RuntimeConfiguration, @unchecked Sendable {
+    private let runtimeConfigProvider: RuntimeConfigProvider
+    private let onBytesUpdated: ((Int) -> Void)?
+    private let optionsMegabytes: [Int]
+    private static let bytesPerMB = 1024 * 1024
+
+    public init(
+        name: String,
+        currentValueBytes: Int,
+        defaultValueBytes: Int,
+        runtimeConfigProvider: RuntimeConfigProvider,
+        optionsMegabytes: [Int] = [25, 50, 100, 200, 500],
+        onBytesUpdated: ((Int) -> Void)? = nil
+    ) {
+        self.runtimeConfigProvider = runtimeConfigProvider
+        self.optionsMegabytes = optionsMegabytes
+        self.onBytesUpdated = onBytesUpdated
+        super.init(
+            name: name,
+            currentValue: .string(Self.displayValue(forBytes: currentValueBytes)),
+            defaultValue: .string(Self.displayValue(forBytes: defaultValueBytes))
+        )
+    }
+
+    public override func getOptions() async throws -> [RuntimeConfigurationValue] {
+        optionsMegabytes.map { .string("\($0) MB") }
+    }
+
+    public override func set(_ value: RuntimeConfigurationValue) async throws {
+        guard case let .string(stringValue) = value else {
+            throw DictatorError.configUpdateFailed("\(name) must be a string")
+        }
+
+        let bytes = try Self.parseMegabytes(from: stringValue) * Self.bytesPerMB
+        let updated = try await runtimeConfigProvider.applyInMemoryPatch(
+            RuntimeConfigPatch(interactionsBufferBytes: bytes)
+        )
+        updateCurrentValue(.string(Self.displayValue(forBytes: updated.interactionsBufferBytes)))
+        onBytesUpdated?(updated.interactionsBufferBytes)
+    }
+
+    private static func parseMegabytes(from value: String) throws -> Int {
+        let digits = value.filter(\.isNumber)
+        guard let parsed = Int(digits), parsed > 0 else {
+            throw DictatorError.configUpdateFailed("invalid interactions buffer size: \(value)")
+        }
+        return parsed
+    }
+
+    private static func displayValue(forBytes bytes: Int) -> String {
+        "\(max(1, bytes / bytesPerMB)) MB"
+    }
+}
+
 public actor RuntimeConfigurationManager {
     private let configurations: [RuntimeConfiguration]
 

@@ -159,6 +159,37 @@ final class RuntimeConfigProviderTests: XCTestCase {
         XCTAssertEqual(persisted, primary)
     }
 
+    func testRuntimeConfigDefaultsInteractionsBufferToOneHundredMBWhenMissing() throws {
+        let json = """
+        {
+          "version": 2,
+          "cloud_model": "gpt-4.1-mini",
+          "local_model": "qwen2.5:7b-instruct",
+          "system_prompt": "intent_refiner_v1.md",
+          "use_cloud": false,
+          "updated_at": "2026-02-24T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(RuntimeConfigFile.self, from: json)
+        XCTAssertEqual(decoded.interactionsBufferBytes, RuntimeConfigFile.defaultInteractionsBufferBytes)
+    }
+
+    func testApplyInMemoryPatchUpdatesInteractionsBufferBytes() async throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let primaryURL = tempDir.appendingPathComponent("runtime-config.json")
+        let primaryStore = RuntimeConfigStore(fileURL: primaryURL)
+        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil, environment: [:])
+
+        let updated = try await provider.applyInMemoryPatch(
+            RuntimeConfigPatch(interactionsBufferBytes: 25 * 1024 * 1024)
+        )
+
+        XCTAssertEqual(updated.interactionsBufferBytes, 25 * 1024 * 1024)
+    }
+
     private func makeTempDir() throws -> URL {
         let base = FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent(UUID().uuidString, isDirectory: true)

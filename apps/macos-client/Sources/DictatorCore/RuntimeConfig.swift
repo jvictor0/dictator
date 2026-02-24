@@ -1,10 +1,13 @@
 import Foundation
 
 public struct RuntimeConfigFile: Codable, Sendable, Equatable {
+    public static let defaultInteractionsBufferBytes: Int = 100 * 1024 * 1024
+
     public let version: Int
     public let cloudModel: String
     public let localModel: String
     public let systemPrompt: String
+    public let interactionsBufferBytes: Int
     public let useCloud: Bool
     public let updatedAt: String
 
@@ -17,6 +20,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         cloudModel: String,
         localModel: String,
         systemPrompt: String = SystemPromptCatalog.defaultPromptFile,
+        interactionsBufferBytes: Int = Self.defaultInteractionsBufferBytes,
         useCloud: Bool,
         updatedAt: String
     ) {
@@ -24,6 +28,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         self.cloudModel = cloudModel
         self.localModel = localModel
         self.systemPrompt = systemPrompt
+        self.interactionsBufferBytes = interactionsBufferBytes
         self.useCloud = useCloud
         self.updatedAt = updatedAt
     }
@@ -44,6 +49,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         case cloudModel = "cloud_model"
         case localModel = "local_model"
         case systemPrompt = "system_prompt"
+        case interactionsBufferBytes = "interactions_buffer_bytes"
         case useCloud = "use_cloud"
         case updatedAt = "updated_at"
     }
@@ -58,17 +64,20 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         let cloudModel = try container.decodeIfPresent(String.self, forKey: .cloudModel)
         let localModel = try container.decodeIfPresent(String.self, forKey: .localModel)
         let systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
+        let interactionsBufferBytes = try container.decodeIfPresent(Int.self, forKey: .interactionsBufferBytes)
         let legacyModel = try container.decodeIfPresent(String.self, forKey: .model)
 
         let resolvedCloudModel = cloudModel ?? legacyModel ?? "gpt-4.1-mini"
         let resolvedLocalModel = localModel ?? legacyModel ?? "qwen2.5:7b-instruct"
         let resolvedSystemPrompt = systemPrompt ?? SystemPromptCatalog.defaultPromptFile
+        let resolvedInteractionsBufferBytes = interactionsBufferBytes ?? Self.defaultInteractionsBufferBytes
 
         self.init(
             version: version,
             cloudModel: resolvedCloudModel,
             localModel: resolvedLocalModel,
             systemPrompt: resolvedSystemPrompt,
+            interactionsBufferBytes: resolvedInteractionsBufferBytes,
             useCloud: useCloud,
             updatedAt: updatedAt
         )
@@ -80,6 +89,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         try container.encode(cloudModel, forKey: .cloudModel)
         try container.encode(localModel, forKey: .localModel)
         try container.encode(systemPrompt, forKey: .systemPrompt)
+        try container.encode(interactionsBufferBytes, forKey: .interactionsBufferBytes)
         try container.encode(useCloud, forKey: .useCloud)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -107,6 +117,7 @@ public struct RuntimeConfigPatch: Sendable, Equatable {
     public let cloudModel: String?
     public let localModel: String?
     public let systemPrompt: String?
+    public let interactionsBufferBytes: Int?
     public let useCloud: Bool?
 
     public init(
@@ -114,17 +125,19 @@ public struct RuntimeConfigPatch: Sendable, Equatable {
         cloudModel: String? = nil,
         localModel: String? = nil,
         systemPrompt: String? = nil,
+        interactionsBufferBytes: Int? = nil,
         useCloud: Bool? = nil
     ) {
         self.model = model
         self.cloudModel = cloudModel
         self.localModel = localModel
         self.systemPrompt = systemPrompt
+        self.interactionsBufferBytes = interactionsBufferBytes
         self.useCloud = useCloud
     }
 
     var isEmpty: Bool {
-        model == nil && cloudModel == nil && localModel == nil && systemPrompt == nil && useCloud == nil
+        model == nil && cloudModel == nil && localModel == nil && systemPrompt == nil && interactionsBufferBytes == nil && useCloud == nil
     }
 }
 
@@ -286,6 +299,7 @@ public actor RuntimeConfigProvider {
             ?? (resolvedUseCloud ? runtimeConfig.localModel : (patchedModel ?? runtimeConfig.localModel))
         let resolvedSystemPrompt = patch.systemPrompt?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? runtimeConfig.systemPrompt
+        let resolvedInteractionsBufferBytes = patch.interactionsBufferBytes ?? runtimeConfig.interactionsBufferBytes
 
         if resolvedCloudModel.isEmpty {
             throw DictatorError.configUpdateFailed("cloud model cannot be empty")
@@ -296,12 +310,16 @@ public actor RuntimeConfigProvider {
         if resolvedSystemPrompt.isEmpty {
             throw DictatorError.configUpdateFailed("system prompt cannot be empty")
         }
+        if resolvedInteractionsBufferBytes <= 0 {
+            throw DictatorError.configUpdateFailed("interactions buffer size must be > 0 bytes")
+        }
 
         let next = RuntimeConfigFile(
             version: runtimeConfig.version,
             cloudModel: resolvedCloudModel,
             localModel: resolvedLocalModel,
             systemPrompt: resolvedSystemPrompt,
+            interactionsBufferBytes: resolvedInteractionsBufferBytes,
             useCloud: resolvedUseCloud,
             updatedAt: RuntimeConfigFile.timestamp(from: now)
         )

@@ -133,6 +133,35 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
         XCTAssertEqual(inMemory.systemPrompt, "team/release/intent_refiner_v2.md")
     }
 
+    func testInteractionsBufferConfigurationUpdatesRuntimeConfig() async throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let provider = RuntimeConfigProvider(
+            store: RuntimeConfigStore(fileURL: tempDir.appendingPathComponent("runtime-config.json")),
+            defaultStore: nil,
+            environment: [:]
+        )
+
+        let manager = RuntimeConfigurationManager(
+            configurations: [
+                RuntimeInteractionsBufferConfiguration(
+                    name: "Interactions Buffer",
+                    currentValueBytes: 100 * 1024 * 1024,
+                    defaultValueBytes: 100 * 1024 * 1024,
+                    runtimeConfigProvider: provider
+                )
+            ]
+        )
+
+        let options = try await manager.getOptions(name: "Interactions Buffer")
+        XCTAssertEqual(options, [.string("25 MB"), .string("50 MB"), .string("100 MB"), .string("200 MB"), .string("500 MB")])
+
+        try await manager.set(name: "Interactions Buffer", value: .string("50 MB"))
+        let inMemory = await provider.currentRuntimeConfig()
+        XCTAssertEqual(inMemory.interactionsBufferBytes, 50 * 1024 * 1024)
+    }
+
     private func makeTempDir() throws -> URL {
         let base = FileManager.default.temporaryDirectory
         let dir = base.appendingPathComponent(UUID().uuidString, isDirectory: true)

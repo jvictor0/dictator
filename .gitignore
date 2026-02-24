@@ -27,3 +27,5 @@ DerivedData/
 
 .swiftpm-module-cache/
 apps/macos-client/models/
+
+apps/macos-client/Data/

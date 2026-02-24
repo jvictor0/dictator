@@ -1,5 +1,6 @@
 {
   "cloud_model" : "gpt-4.1-mini",
+  "interactions_buffer_bytes" : 104857600,
   "local_model" : "qwen2.5:7b-instruct",
   "system_prompt" : "intent_refiner_v1.md",
   "updated_at" : "2026-02-24T05:43:59Z",
