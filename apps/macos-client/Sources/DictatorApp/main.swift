@@ -67,6 +67,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var launchpadPageController: LaunchpadPageController?
     private var launchpadRenderWorker: LaunchpadColorRenderWorker?
     private var launchpadInvalidationBus: RenderInvalidationBus?
+    private var launchpadOverlayController: LaunchpadFullscreenOverlayController?
+    private var launchpadOverlayTabSlotCoordinator: LaunchpadOverlayTabSlotCoordinator?
     private var managedOllamaProcess: Process?
     private var isRelaunching = false
     private let dictationStateLock = NSLock()
@@ -120,7 +122,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             TraceLogger.log("app startup failed: caps lock trigger not armed")
         }
 
-        setupLaunchpadIntegration()
+        Task { @MainActor in
+            self.setupLaunchpadIntegration()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -478,6 +482,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         text.replacingOccurrences(of: "\n", with: "\\n")
     }
 
+    @MainActor
     private func setupLaunchpadIntegration() {
         if !KeyboardInjector.hasAccessibilityPermission() {
             _ = KeyboardInjector.requestAccessibilityPermissionPrompt()
@@ -488,6 +493,38 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         let invalidationBus = RenderInvalidationBus()
         let pageController = LaunchpadPageController(invalidationBus: invalidationBus)
+        let overlayController = LaunchpadFullscreenOverlayController(
+            tabs: [
+                LaunchpadPlaceholderTab(
+                    id: "home",
+                    title: "Home",
+                    description: "Placeholder content for Home tab."
+                ),
+                LaunchpadPlaceholderTab(
+                    id: "actions",
+                    title: "Actions",
+                    description: "Placeholder content for Actions tab."
+                ),
+                LaunchpadPlaceholderTab(
+                    id: "settings",
+                    title: "Settings",
+                    description: "Placeholder content for Settings tab."
+                )
+            ]
+        )
+        let overlayTabSlotCoordinator = LaunchpadOverlayTabSlotCoordinator(
+            invalidationBus: invalidationBus,
+            pageController: pageController,
+            tabCount: overlayController.tabCount,
+            onSelectTab: { [weak self] index in
+                Task { @MainActor in
+                    self?.selectLaunchpadOverlayTab(index: index)
+                }
+            }
+        )
+        overlayController.onStateChanged = { [weak overlayTabSlotCoordinator] state in
+            overlayTabSlotCoordinator?.sync(with: state)
+        }
         let pageFactory = LaunchpadPageFactory(
             invalidationBus: invalidationBus,
             onKeystroke: { [weak self] key, baseModifiers in
@@ -516,6 +553,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             onLoadSafeRuntimeConfig: { [weak self] in
                 Task { @MainActor in
                     await self?.handleLaunchpadLoadSafeRuntimeConfig()
+                }
+            },
+            onToggleFullscreenOverlay: { [weak self] in
+                Task { @MainActor in
+                    self?.toggleLaunchpadOverlay()
                 }
             },
             recordStatusColorProvider: { [weak self] in
@@ -598,9 +640,44 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         launchpadPageController = pageController
         launchpadMIDIManager = midiManager
         launchpadRenderWorker = renderWorker
+        launchpadOverlayController = overlayController
+        launchpadOverlayTabSlotCoordinator = overlayTabSlotCoordinator
 
         renderWorker.start()
         midiManager.start()
+    }
+
+    @MainActor
+    private func toggleLaunchpadOverlay() {
+        guard let launchpadOverlayController else {
+            TraceLogger.log("launchpad overlay toggle ignored: controller unavailable")
+            return
+        }
+
+        let isVisible = launchpadOverlayController.toggle()
+        let status = isVisible ? "Overlay visible" : "Overlay hidden"
+        menuBarController?.setLaunchpadStatus(status)
+        TraceLogger.log("launchpad overlay toggled visible=\(isVisible)")
+    }
+
+    @MainActor
+    private func selectLaunchpadOverlayTab(index: Int) {
+        guard let launchpadOverlayController else {
+            TraceLogger.log("launchpad overlay tab select ignored: controller unavailable")
+            return
+        }
+        guard launchpadOverlayController.isVisible else {
+            TraceLogger.log("launchpad overlay tab select ignored: overlay hidden")
+            return
+        }
+
+        guard launchpadOverlayController.selectTab(index: index, showIfHidden: false) else {
+            TraceLogger.log("launchpad overlay tab select ignored: index out of range index=\(index)")
+            return
+        }
+
+        menuBarController?.setLaunchpadStatus("Overlay tab \(index) selected")
+        TraceLogger.log("launchpad overlay tab selected index=\(index)")
     }
 
     private func bootstrapOllamaIfNeeded() {

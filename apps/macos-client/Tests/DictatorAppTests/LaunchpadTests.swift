@@ -116,6 +116,28 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertNoThrow(try LaunchpadLayoutLoader.decode(json))
     }
 
+    func testLayoutDecodeAcceptsToggleFullscreenOverlayAction() throws {
+        let json = """
+        {
+          "pages": [
+            {
+              "id": "control",
+              "pads": [
+                {
+                  "x": 7,
+                  "y": 8,
+                  "color": { "r": 40, "g": 140, "b": 255 },
+                  "action": { "type": "toggle_fullscreen_overlay" }
+                }
+              ]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        XCTAssertNoThrow(try LaunchpadLayoutLoader.decode(json))
+    }
+
     func testLayoutDecodeRejectsMissingKeystrokeKey() {
         let json = """
         {
@@ -163,10 +185,167 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertEqual(transport.batches[1][0].coordinate, newCoordinate)
     }
 
+    func testRenderWorkerSendsOffWhenExtendedCoordinateRemoved() {
+        let bus = RenderInvalidationBus()
+        let provider = VariableCoordinateColorProvider()
+        let transport = FakeTransport()
+        let worker = LaunchpadColorRenderWorker(invalidationBus: bus, colorProvider: provider, transport: transport)
+
+        let coordinate = PadCoordinate(x: 1, y: 9)
+        provider.coordinates = [coordinate]
+        provider.colors[coordinate] = PadColor(r: 5, g: 15, b: 25)
+        worker.renderNowForTesting(forceAll: false)
+        XCTAssertEqual(transport.batches.count, 1)
+        XCTAssertEqual(transport.batches[0], [PadColorUpdate(coordinate: coordinate, color: PadColor(r: 5, g: 15, b: 25))])
+
+        provider.coordinates = []
+        provider.colors.removeValue(forKey: coordinate)
+        worker.renderNowForTesting(forceAll: false)
+        XCTAssertEqual(transport.batches.count, 2)
+        XCTAssertEqual(transport.batches[1], [PadColorUpdate(coordinate: coordinate, color: .off)])
+    }
+
     func testKeyboardKeyDecodesSpace() throws {
         let json = "\"space\"".data(using: .utf8)!
         let decoded = try JSONDecoder().decode(KeyboardKey.self, from: json)
         XCTAssertEqual(decoded, .space)
+    }
+
+    func testSingleColorSysExUpdateExpandsToAllAddressableCoordinates() {
+        var cached: [PadCoordinate: PadColor] = [:]
+        let target = PadCoordinate(x: 2, y: 3)
+        let targetColor = PadColor(r: 17, g: 33, b: 49)
+        let incoming = [PadColorUpdate(coordinate: target, color: targetColor)]
+
+        let expanded = LaunchpadMIDIManager.makeSysExUpdates(from: incoming, cachedColors: &cached)
+
+        XCTAssertEqual(expanded.count, LaunchpadMIDIManager.allAddressableCoordinates.count)
+        XCTAssertTrue(expanded.contains(PadColorUpdate(coordinate: target, color: targetColor)))
+        XCTAssertTrue(expanded.contains(PadColorUpdate(coordinate: PadCoordinate(x: 0, y: 0), color: .off)))
+    }
+
+    func testMultiColorSysExUpdateStaysDelta() {
+        var cached: [PadCoordinate: PadColor] = [:]
+        let incoming = [
+            PadColorUpdate(coordinate: PadCoordinate(x: 0, y: 0), color: PadColor(r: 1, g: 2, b: 3)),
+            PadColorUpdate(coordinate: PadCoordinate(x: 1, y: 1), color: PadColor(r: 4, g: 5, b: 6))
+        ]
+
+        let result = LaunchpadMIDIManager.makeSysExUpdates(from: incoming, cachedColors: &cached)
+        XCTAssertEqual(result, incoming)
+    }
+
+    func testPageFactoryDispatchesToggleFullscreenOverlayAction() throws {
+        let bus = RenderInvalidationBus()
+        let json = """
+        {
+          "initial_page_id": "control",
+          "pages": [
+            {
+              "id": "control",
+              "pads": [
+                {
+                  "x": 7,
+                  "y": 8,
+                  "color": { "r": 40, "g": 140, "b": 255 },
+                  "action": { "type": "toggle_fullscreen_overlay" }
+                }
+              ]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let config = try LaunchpadLayoutLoader.decode(json)
+
+        var toggleCount = 0
+        let factory = LaunchpadPageFactory(
+            invalidationBus: bus,
+            onKeystroke: nil,
+            onDictationCommand: nil,
+            onContextualBackspace: nil,
+            onAppReload: nil,
+            onChangeAgentModelMode: nil,
+            onLoadSafeRuntimeConfig: nil,
+            onToggleFullscreenOverlay: {
+                toggleCount += 1
+            },
+            recordStatusColorProvider: { .off },
+            shiftLatchColorProvider: { .off },
+            onModifierPress: nil,
+            onModifierRelease: nil
+        )
+        let pages = factory.makePages(from: config)
+        let pageController = LaunchpadPageController(invalidationBus: bus)
+        pageController.setPages(pages, initialPageID: config.initialPageID)
+
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 7, y: 8), phase: .press, velocity: 100))
+        XCTAssertEqual(toggleCount, 1)
+    }
+
+    func testPageControllerControlLayerSlotAddRemove() {
+        let bus = RenderInvalidationBus()
+        let pageController = LaunchpadPageController(invalidationBus: bus)
+        let layer = FakeControlLayer()
+
+        pageController.setControlLayer(layer, forSlot: "overlay.tabs")
+        XCTAssertEqual(pageController.activeControlLayerSlotIDs(), ["overlay.tabs"])
+        XCTAssertEqual(pageController.getColor(at: PadCoordinate(x: 1, y: 9)), layer.color)
+
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 1, y: 9), phase: .press, velocity: 100))
+        XCTAssertEqual(layer.handleCount, 1)
+
+        pageController.removeControlLayer(forSlot: "overlay.tabs")
+        XCTAssertTrue(pageController.activeControlLayerSlotIDs().isEmpty)
+        XCTAssertEqual(pageController.getColor(at: PadCoordinate(x: 1, y: 9)), .off)
+
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 1, y: 9), phase: .press, velocity: 100))
+        XCTAssertEqual(layer.handleCount, 1)
+    }
+
+    func testOverlayTabSlotCoordinatorInstallsAndRemovesSlotLayerByVisibility() {
+        let bus = RenderInvalidationBus()
+        let pageController = LaunchpadPageController(invalidationBus: bus)
+        var selectedIndices: [Int] = []
+        let coordinator = LaunchpadOverlayTabSlotCoordinator(
+            invalidationBus: bus,
+            pageController: pageController,
+            tabCount: 3,
+            onSelectTab: { index in
+                selectedIndices.append(index)
+            }
+        )
+
+        coordinator.sync(with: LaunchpadOverlayState(isVisible: false, selectedTabIndex: 0))
+        XCTAssertTrue(pageController.activeControlLayerSlotIDs().isEmpty)
+
+        coordinator.sync(with: LaunchpadOverlayState(isVisible: true, selectedTabIndex: 1))
+        XCTAssertEqual(pageController.activeControlLayerSlotIDs(), ["overlay.tabs"])
+        XCTAssertEqual(pageController.getColor(at: PadCoordinate(x: 1, y: 9)), PadColor(r: 0, g: 220, b: 255))
+
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 2, y: 9), phase: .press, velocity: 100))
+        XCTAssertEqual(selectedIndices, [2])
+
+        coordinator.sync(with: LaunchpadOverlayState(isVisible: false, selectedTabIndex: 0))
+        XCTAssertTrue(pageController.activeControlLayerSlotIDs().isEmpty)
+        XCTAssertEqual(pageController.getColor(at: PadCoordinate(x: 1, y: 9)), .off)
+    }
+
+    func testOverlayTabButtonLayerSupportsCoordinateReassignment() {
+        let bus = RenderInvalidationBus()
+        var selectedIndices: [Int] = []
+        let layer = LaunchpadOverlayTabButtonLayer(
+            invalidationBus: bus,
+            tabCount: 2,
+            onSelectTab: { selectedIndices.append($0) }
+        )
+
+        layer.assignCoordinates { tabIndex in
+            PadCoordinate(x: 7, y: tabIndex)
+        }
+
+        XCTAssertEqual(Set(layer.allCoordinatesForRendering()), Set([PadCoordinate(x: 7, y: 0), PadCoordinate(x: 7, y: 1)]))
+        XCTAssertTrue(layer.handle(PadEvent(coordinate: PadCoordinate(x: 7, y: 1), phase: .press, velocity: 100)))
+        XCTAssertEqual(selectedIndices, [1])
     }
 
     func testLaunchpadCellRepeatsWhileHeld() {
@@ -232,4 +411,38 @@ private final class FakeTransport: LaunchpadTransport {
     func clear() {}
 
     func setProgrammerModeIfNeeded() {}
+}
+
+private final class VariableCoordinateColorProvider: ColorProvider {
+    var coordinates: [PadCoordinate] = []
+    var colors: [PadCoordinate: PadColor] = [:]
+
+    func getColor(at coordinate: PadCoordinate) -> PadColor {
+        colors[coordinate] ?? .off
+    }
+
+    func allCoordinatesForRendering() -> [PadCoordinate] {
+        coordinates
+    }
+}
+
+private final class FakeControlLayer: LaunchpadControlLayer {
+    let color = PadColor(r: 10, g: 20, b: 30)
+    var handleCount = 0
+
+    func handle(_ event: PadEvent) -> Bool {
+        if event.coordinate == PadCoordinate(x: 1, y: 9) {
+            handleCount += 1
+            return true
+        }
+        return false
+    }
+
+    func getColor(at coordinate: PadCoordinate) -> PadColor? {
+        coordinate == PadCoordinate(x: 1, y: 9) ? color : nil
+    }
+
+    func allCoordinatesForRendering() -> [PadCoordinate] {
+        [PadCoordinate(x: 1, y: 9)]
+    }
 }

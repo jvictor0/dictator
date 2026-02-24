@@ -6,6 +6,12 @@ protocol LaunchpadCellType: AnyObject {
     func getColor() -> PadColor
 }
 
+protocol LaunchpadControlLayer: AnyObject {
+    func handle(_ event: PadEvent) -> Bool
+    func getColor(at coordinate: PadCoordinate) -> PadColor?
+    func allCoordinatesForRendering() -> [PadCoordinate]
+}
+
 final class LaunchpadCell: LaunchpadCellType {
     struct RepeatBehavior {
         let initialDelay: TimeInterval
@@ -250,6 +256,8 @@ final class LaunchpadPageController: ColorProvider {
     private var pages: [String: LaunchpadPage] = [:]
     private var orderedIDs: [String] = []
     private var activePageID: String?
+    private var controlLayersBySlot: [String: LaunchpadControlLayer] = [:]
+    private var orderedControlLayerSlots: [String] = []
 
     init(invalidationBus: RenderInvalidationBus) {
         self.invalidationBus = invalidationBus
@@ -273,6 +281,49 @@ final class LaunchpadPageController: ColorProvider {
         }
         activePageID = id
         invalidationBus.markDirty(reason: "page_set")
+    }
+
+    func setControlLayer(_ controlLayer: LaunchpadControlLayer, forSlot slotID: String) {
+        lock.lock()
+        if controlLayersBySlot[slotID] == nil {
+            orderedControlLayerSlots.append(slotID)
+        }
+        controlLayersBySlot[slotID] = controlLayer
+        lock.unlock()
+        invalidationBus.markDirty(reason: "control_layer_set")
+    }
+
+    func removeControlLayer(forSlot slotID: String) {
+        lock.lock()
+        let removed = controlLayersBySlot.removeValue(forKey: slotID) != nil
+        if removed {
+            orderedControlLayerSlots.removeAll { $0 == slotID }
+        }
+        lock.unlock()
+        guard removed else {
+            return
+        }
+        invalidationBus.markDirty(reason: "control_layer_removed")
+    }
+
+    func clearControlLayers() {
+        lock.lock()
+        let hadLayers = !controlLayersBySlot.isEmpty
+        if hadLayers {
+            controlLayersBySlot.removeAll()
+            orderedControlLayerSlots.removeAll()
+        }
+        lock.unlock()
+        guard hadLayers else {
+            return
+        }
+        invalidationBus.markDirty(reason: "control_layers_cleared")
+    }
+
+    func activeControlLayerSlotIDs() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return orderedControlLayerSlots.filter { controlLayersBySlot[$0] != nil }
     }
 
     func nextPage() {
@@ -305,22 +356,47 @@ final class LaunchpadPageController: ColorProvider {
     func handle(_ event: PadEvent) {
         lock.lock()
         let page = activePageID.flatMap { pages[$0] }
+        let controlLayers = orderedControlLayerSlots.compactMap { controlLayersBySlot[$0] }
         lock.unlock()
+
+        for layer in controlLayers {
+            if layer.handle(event) {
+                return
+            }
+        }
         page?.handle(event)
     }
 
     func getColor(at coordinate: PadCoordinate) -> PadColor {
         lock.lock()
         let page = activePageID.flatMap { pages[$0] }
+        let controlLayers = orderedControlLayerSlots.compactMap { controlLayersBySlot[$0] }
         lock.unlock()
+
+        for layer in controlLayers {
+            if let color = layer.getColor(at: coordinate) {
+                return color
+            }
+        }
         return page?.getColor(at: coordinate) ?? .off
     }
 
     func allCoordinatesForRendering() -> [PadCoordinate] {
         lock.lock()
         let page = activePageID.flatMap { pages[$0] }
+        let controlLayers = orderedControlLayerSlots.compactMap { controlLayersBySlot[$0] }
         lock.unlock()
-        return page?.allCoordinates() ?? ColorProviderDefaultCoordinates.all
+
+        var coordinates = page?.allCoordinates() ?? ColorProviderDefaultCoordinates.all
+        var seen = Set(coordinates)
+        for layer in controlLayers {
+            for coordinate in layer.allCoordinatesForRendering() {
+                if seen.insert(coordinate).inserted {
+                    coordinates.append(coordinate)
+                }
+            }
+        }
+        return coordinates
     }
 }
 

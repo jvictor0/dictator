@@ -11,6 +11,18 @@ final class LaunchpadMIDIManager: LaunchpadTransport {
     private static let sysexModelID: UInt8 = 0x0E
     private static let sleepCommand: UInt8 = 0x09
     private static let idleSleepInterval: TimeInterval = 600
+    static let allAddressableCoordinates: [PadCoordinate] = {
+        var coordinates: [PadCoordinate] = []
+        for y in -1...9 {
+            for x in -1...8 {
+                let coordinate = PadCoordinate(x: x, y: y)
+                if coordinate.isLaunchpadProMk3Addressable {
+                    coordinates.append(coordinate)
+                }
+            }
+        }
+        return coordinates
+    }()
 
     private let queue = DispatchQueue(label: "dictator.launchpad.midi")
     private var scanTimer: DispatchSourceTimer?
@@ -22,6 +34,7 @@ final class LaunchpadMIDIManager: LaunchpadTransport {
 
     private var connectedSource = MIDIEndpointRef()
     private var connectedDestination = MIDIEndpointRef()
+    private var lastSentColors: [PadCoordinate: PadColor] = [:]
 
     var onConnectionStateChanged: ((ConnectionState) -> Void)?
     var onPadEvent: ((PadEvent) -> Void)?
@@ -60,11 +73,11 @@ final class LaunchpadMIDIManager: LaunchpadTransport {
     }
 
     func clear() {
-        sendBatchPadColors((0...7).flatMap { y in
-            (0...7).map { x in
-                PadColorUpdate(coordinate: PadCoordinate(x: x, y: y), color: .off)
+        sendBatchPadColors(
+            Self.allAddressableCoordinates.map { coordinate in
+                PadColorUpdate(coordinate: coordinate, color: .off)
             }
-        })
+        )
     }
 
     func setProgrammerModeIfNeeded() {
@@ -81,10 +94,12 @@ final class LaunchpadMIDIManager: LaunchpadTransport {
                 return
             }
 
-            var bytes: [UInt8] = [0xF0, 0x00, 0x20, 0x29, 0x02, Self.sysexModelID, 0x03]
-            bytes.reserveCapacity(8 + updates.count * 5)
+            let updatesToSend = Self.makeSysExUpdates(from: updates, cachedColors: &self.lastSentColors)
 
-            for update in updates {
+            var bytes: [UInt8] = [0xF0, 0x00, 0x20, 0x29, 0x02, Self.sysexModelID, 0x03]
+            bytes.reserveCapacity(8 + updatesToSend.count * 5)
+
+            for update in updatesToSend {
                 guard let note = Self.coordinateToNote(update.coordinate) else {
                     continue
                 }
@@ -97,6 +112,24 @@ final class LaunchpadMIDIManager: LaunchpadTransport {
 
             bytes.append(0xF7)
             self.sendRaw(bytes: bytes)
+        }
+    }
+
+    static func makeSysExUpdates(
+        from incoming: [PadColorUpdate],
+        cachedColors: inout [PadCoordinate: PadColor]
+    ) -> [PadColorUpdate] {
+        for update in incoming where update.coordinate.isLaunchpadProMk3Addressable {
+            cachedColors[update.coordinate] = update.color
+        }
+
+        // When a single-color SysEx would be sent, expand to full frame payload.
+        guard incoming.count == 1 else {
+            return incoming
+        }
+
+        return allAddressableCoordinates.map { coordinate in
+            PadColorUpdate(coordinate: coordinate, color: cachedColors[coordinate] ?? .off)
         }
     }
 
@@ -171,6 +204,7 @@ final class LaunchpadMIDIManager: LaunchpadTransport {
 
         setProgrammerModeIfNeeded()
         sendSleepMode(isAwake: true)
+        clear()
         armIdleSleepTimer()
         publishState(.connected(name: endpointName(source) ?? "Launchpad Pro Mk3"))
         TraceLogger.log("launchpad connected")

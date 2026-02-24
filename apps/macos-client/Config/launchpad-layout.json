@@ -30,6 +30,12 @@
           "action": { "type": "load_safe_runtime_config" }
         },
         {
+          "x": 7,
+          "y": 8,
+          "color": { "r": 40, "g": 140, "b": 255 },
+          "action": { "type": "toggle_fullscreen_overlay" }
+        },
+        {
           "x": 4,
           "y": 7,
           "color": { "r": 255, "g": 255, "b": 255 },

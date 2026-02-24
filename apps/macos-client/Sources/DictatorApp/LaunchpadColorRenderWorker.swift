@@ -101,6 +101,7 @@ final class LaunchpadColorRenderWorker {
         }
 
         let coordinates = colorProvider.allCoordinatesForRendering()
+        let coordinateSet = Set(coordinates)
         var changed: [PadColorUpdate] = []
         changed.reserveCapacity(coordinates.count)
 
@@ -114,6 +115,18 @@ final class LaunchpadColorRenderWorker {
                 } else {
                     lastExtendedFrame[coordinate] = color
                 }
+            }
+        }
+
+        // Turn off any previously-rendered extended coordinates that no longer exist.
+        let removedExtendedCoordinates = lastExtendedFrame.keys.filter { !coordinateSet.contains($0) }
+        if !removedExtendedCoordinates.isEmpty {
+            for coordinate in removedExtendedCoordinates {
+                let last = lastExtendedFrame[coordinate] ?? .off
+                if forceAll || last != .off {
+                    changed.append(PadColorUpdate(coordinate: coordinate, color: .off))
+                }
+                lastExtendedFrame.removeValue(forKey: coordinate)
             }
         }
 

@@ -47,6 +47,7 @@ struct LaunchpadActionConfig: Decodable {
         case modifierLatch = "modifier_latch"
         case changeAgentModelMode = "change_agent_model_mode"
         case loadSafeRuntimeConfig = "load_safe_runtime_config"
+        case toggleFullscreenOverlay = "toggle_fullscreen_overlay"
     }
 
     enum DictationCommand: String, Decodable {
@@ -150,6 +151,8 @@ enum LaunchpadLayoutLoader {
                     break
                 case .loadSafeRuntimeConfig:
                     break
+                case .toggleFullscreenOverlay:
+                    break
                 case .modifierLatch:
                     guard pad.action.modifier != nil else {
                         throw NSError(
@@ -175,6 +178,7 @@ final class LaunchpadPageFactory {
     private let onAppReload: (() -> Void)?
     private let onChangeAgentModelMode: (() -> Void)?
     private let onLoadSafeRuntimeConfig: (() -> Void)?
+    private let onToggleFullscreenOverlay: (() -> Void)?
     private let recordStatusColorProvider: () -> PadColor
     private let shiftLatchColorProvider: () -> PadColor
     private let onModifierPress: ((LaunchpadActionConfig.ModifierType) -> Void)?
@@ -188,6 +192,7 @@ final class LaunchpadPageFactory {
         onAppReload: (() -> Void)?,
         onChangeAgentModelMode: (() -> Void)?,
         onLoadSafeRuntimeConfig: (() -> Void)?,
+        onToggleFullscreenOverlay: (() -> Void)?,
         recordStatusColorProvider: @escaping () -> PadColor,
         shiftLatchColorProvider: @escaping () -> PadColor,
         onModifierPress: ((LaunchpadActionConfig.ModifierType) -> Void)?,
@@ -200,6 +205,7 @@ final class LaunchpadPageFactory {
         self.onAppReload = onAppReload
         self.onChangeAgentModelMode = onChangeAgentModelMode
         self.onLoadSafeRuntimeConfig = onLoadSafeRuntimeConfig
+        self.onToggleFullscreenOverlay = onToggleFullscreenOverlay
         self.recordStatusColorProvider = recordStatusColorProvider
         self.shiftLatchColorProvider = shiftLatchColorProvider
         self.onModifierPress = onModifierPress
@@ -213,6 +219,7 @@ final class LaunchpadPageFactory {
         let onAppReload = self.onAppReload
         let onChangeAgentModelMode = self.onChangeAgentModelMode
         let onLoadSafeRuntimeConfig = self.onLoadSafeRuntimeConfig
+        let onToggleFullscreenOverlay = self.onToggleFullscreenOverlay
         let recordStatusColorProvider = self.recordStatusColorProvider
         let shiftLatchColorProvider = self.shiftLatchColorProvider
         let onModifierPress = self.onModifierPress
@@ -262,6 +269,11 @@ final class LaunchpadPageFactory {
                     "launchpad action load_safe_runtime_config page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
                 )
                 onLoadSafeRuntimeConfig?()
+            case .toggleFullscreenOverlay:
+                TraceLogger.log(
+                    "launchpad action toggle_fullscreen_overlay page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
+                )
+                onToggleFullscreenOverlay?()
             case .modifierLatch:
                 break
             }
@@ -275,7 +287,7 @@ final class LaunchpadPageFactory {
                 switch padConfig.action.type {
                 case .keystroke, .contextualBackspace:
                     shouldRepeat = true
-                case .dictation, .appReload, .modifierLatch, .changeAgentModelMode, .loadSafeRuntimeConfig:
+                case .dictation, .appReload, .modifierLatch, .changeAgentModelMode, .loadSafeRuntimeConfig, .toggleFullscreenOverlay:
                     shouldRepeat = false
                 }
                 let cell: LaunchpadCellType
