@@ -9,6 +9,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         case thinking
     }
 
+    private enum InteractionMode {
+        case standard
+        case talonLite
+    }
+
     private enum ShiftLatchState {
         case unpressed
         case pressedWillLatchOnRelease
@@ -47,6 +52,20 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         refinementEngine: makeRefinementEngine()
     )
     private lazy var apiClient: APIClient = APIClient(coreClient: coreClient)
+    private lazy var talonLiteRecoveryEngine: TalonLiteRecoveryEngine = RuntimeConfigTalonLiteRecoveryEngine(
+        runtimeConfigProvider: runtimeConfigProvider,
+        secretStore: secretStore,
+        canUseOpenAI: { [weak self] in
+            self?.hasOpenAIKey() ?? false
+        }
+    )
+    private lazy var talonLiteOrchestrator: TalonLiteOrchestrator = TalonLiteOrchestrator(
+        sttEngine: sttEngine,
+        recoveryEngine: talonLiteRecoveryEngine,
+        trace: { message in
+            TraceLogger.log(message)
+        }
+    )
 
     private let sessionID = UUID().uuidString
     private var isHandlingTrigger = false
@@ -63,6 +82,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private let dictationStateLock = NSLock()
     private var dictationState: DictationState = .idle
     private var activeDictationTask: Task<DictateCallResult, Error>?
+    private var activeInteractionMode: InteractionMode = .standard
     private let shiftLatchStateLock = NSLock()
     private var shiftLatchState: ShiftLatchState = .unpressed
     private var runtimeConfigurationManager: RuntimeConfigurationManager?
@@ -151,14 +171,14 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         TraceLogger.log("caps-trigger callback started")
 
         if recordingController.isRecording {
-            await stopRecordingAndDictate(menuBarController: menuBarController)
+            await stopRecordingAndProcess(menuBarController: menuBarController)
         } else {
-            await startRecording(menuBarController: menuBarController)
+            await startRecording(menuBarController: menuBarController, mode: .standard)
         }
     }
 
     @MainActor
-    private func startRecording(menuBarController: MenuBarController?) async {
+    private func startRecording(menuBarController: MenuBarController?, mode: InteractionMode) async {
         menuBarController?.setState("Starting recording...")
         switch await audioRecorder.start() {
         case .success:
@@ -177,6 +197,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             recordingContext = context.isEmpty ? nil : context
+            activeInteractionMode = mode
             if let dictationContext = recordingContext?["dictation_context"] {
                 TraceLogger.log("captured recording context: \(dictationContext)")
             } else {
@@ -189,6 +210,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             TraceLogger.log("recording started")
         case let .failure(error):
             recordingContext = nil
+            activeInteractionMode = .standard
             setDictationState(.idle)
             menuBarController?.setIndicatorState(.idle)
             menuBarController?.setState("Failed: \(Self.recordingFailureMessage(for: error))")
@@ -204,6 +226,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         _ = recordingController.toggle()
         recordingContext = nil
+        activeInteractionMode = .standard
         _ = audioRecorder.stop()
         cancelActiveDictationTask()
         setDictationState(.idle)
@@ -255,7 +278,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func stopRecordingAndDictate(menuBarController: MenuBarController?) async {
+    private func stopRecordingAndProcess(menuBarController: MenuBarController?) async {
         _ = recordingController.toggle()
         menuBarController?.setIndicatorState(.idle)
         menuBarController?.setState("Stopping recording...")
@@ -268,36 +291,77 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             TraceLogger.log("recording stop failed: \(error)")
             return
         case let .success(capturedAudio):
+            let interactionMode = activeInteractionMode
             let requestContext = recordingContext
             recordingContext = nil
+            activeInteractionMode = .standard
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
             setDictationState(.thinking)
             menuBarController?.setIndicatorState(.refining)
-            menuBarController?.setState("Transcribing + refining...")
+            switch interactionMode {
+            case .standard:
+                menuBarController?.setState("Transcribing + refining...")
+            case .talonLite:
+                menuBarController?.setState("Transcribing Talon command...")
+            }
 
             do {
                 let runtimeConfiguration = await runtimeConfigProvider.currentConfiguration()
                 let runtimeConfig = await runtimeConfigProvider.currentRuntimeConfig()
                 let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
-                let request = DictateRequest(
-                    audio_b64: capturedAudio.data.base64EncodedString(),
-                    sample_rate: capturedAudio.sampleRate,
-                    locale: locale,
-                    session_id: sessionID,
-                    optional_context: requestContext
-                )
                 let pipelineStart = Date()
-                let task = Task { [apiClient] in
-                    try await apiClient.dictate(request)
+                let task = Task { [apiClient, talonLiteOrchestrator] in
+                    switch interactionMode {
+                    case .standard:
+                        let request = DictateRequest(
+                            audio_b64: capturedAudio.data.base64EncodedString(),
+                            sample_rate: capturedAudio.sampleRate,
+                            locale: locale,
+                            session_id: sessionID,
+                            optional_context: requestContext
+                        )
+                        return try await apiClient.dictate(request)
+                    case .talonLite:
+                        let transcribeRequest = TranscribeRequest(
+                            audio_b64: capturedAudio.data.base64EncodedString(),
+                            sample_rate: capturedAudio.sampleRate,
+                            locale: locale,
+                            session_id: sessionID
+                        )
+                        let processed = try await talonLiteOrchestrator.process(transcribeRequest)
+                        let summary: String
+                        let flags: [String]
+                        if let recovered = processed.recoveredTranscript {
+                            summary = "Talon-lite parsed with one-shot LLM recovery."
+                            flags = ["talon_lite_recovered"]
+                            TraceLogger.log("talon-lite recovery transcript: \(Self.logSafeText(recovered))")
+                        } else {
+                            summary = "Talon-lite parsed without LLM recovery."
+                            flags = []
+                        }
+                        return DictateCallResult(
+                            response: DictateResponse(
+                                raw_transcript: processed.rawTranscript,
+                                revised_text: processed.outputText,
+                                edit_summary: summary,
+                                uncertainty_flags: flags
+                            ),
+                            transcribeMs: processed.transcribeMs,
+                            refineMs: processed.parseAndRecoveryMs
+                        )
+                    }
                 }
                 setActiveDictationTask(task)
                 let dictatedCall = try await task.value
                 clearActiveDictationTask(task)
                 let dictated = dictatedCall.response
+                let modeTag = interactionMode == .talonLite ? "talon-lite" : "dictate"
                 TraceLogger.log(
-                    "dictate success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs), refineMs=\(dictatedCall.refineMs), summary=\(dictated.edit_summary))"
+                    "\(modeTag) success (rawChars=\(dictated.raw_transcript.count), revisedChars=\(dictated.revised_text.count), transcribeMs=\(dictatedCall.transcribeMs), refineMs=\(dictatedCall.refineMs), summary=\(dictated.edit_summary))"
                 )
-                logRefinementMode(context: requestContext)
+                if interactionMode == .standard {
+                    logRefinementMode(context: requestContext)
+                }
                 TraceLogger.log("dictate raw transcript: \(Self.logSafeText(dictated.raw_transcript))")
                 TraceLogger.log("dictate revised text: \(Self.logSafeText(dictated.revised_text))")
                 let totalPipelineMs = Self.elapsedMs(since: pipelineStart)
@@ -331,7 +395,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 case .success:
                     setDictationState(.idle)
                     menuBarController?.setIndicatorState(.idle)
-                    menuBarController?.setState("Inserted revised text")
+                    menuBarController?.setState(interactionMode == .talonLite ? "Inserted Talon text" : "Inserted revised text")
                 case let .failure(error):
                     setDictationState(.idle)
                     menuBarController?.setIndicatorState(.idle)
@@ -349,7 +413,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 }
                 menuBarController?.setIndicatorState(.idle)
                 menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
-                TraceLogger.log("dictate failed: \(error)")
+                TraceLogger.log("\(interactionMode == .talonLite ? "talon-lite" : "dictate") failed: \(error)")
             }
         }
     }
@@ -475,6 +539,10 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 return "Config update failed: \(String(reason.prefix(60)))"
             case .configInteractionUnavailable:
                 return "Config interaction unavailable"
+            case let .talonParseFailed(reason):
+                return "Talon parse failed: \(String(reason.prefix(60)))"
+            case let .talonRecoveryFailed(reason):
+                return "Talon recovery failed: \(String(reason.prefix(60)))"
             }
         }
         if error is APIClientError {
@@ -597,6 +665,11 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             onDictationCommand: { [weak self] command in
                 Task { @MainActor in
                     await self?.handleLaunchpadDictationCommand(command)
+                }
+            },
+            onTalonLiteDictationCommand: { [weak self] command in
+                Task { @MainActor in
+                    await self?.handleLaunchpadTalonLiteDictationCommand(command)
                 }
             },
             onContextualBackspace: { [weak self] in
@@ -756,14 +829,24 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func handleLaunchpadDictationCommand(_ command: LaunchpadActionConfig.DictationCommand) async {
+        await handleLaunchpadDictationCommand(command, mode: .standard)
+    }
+
+    @MainActor
+    private func handleLaunchpadTalonLiteDictationCommand(_ command: LaunchpadActionConfig.DictationCommand) async {
+        await handleLaunchpadDictationCommand(command, mode: .talonLite)
+    }
+
+    @MainActor
+    private func handleLaunchpadDictationCommand(_ command: LaunchpadActionConfig.DictationCommand, mode: InteractionMode) async {
         switch command {
         case .start:
             if currentDictationState() == .idle && !recordingController.isRecording {
-                await startRecording(menuBarController: menuBarController)
+                await startRecording(menuBarController: menuBarController, mode: mode)
             }
         case .stop:
             if currentDictationState() == .recording && recordingController.isRecording {
-                await stopRecordingAndDictate(menuBarController: menuBarController)
+                await stopRecordingAndProcess(menuBarController: menuBarController)
             }
         case .cancel:
             cancelRecording(menuBarController: menuBarController)
@@ -771,9 +854,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             if currentDictationState() == .thinking {
                 cancelThinking(menuBarController: menuBarController)
             } else if recordingController.isRecording {
-                await stopRecordingAndDictate(menuBarController: menuBarController)
+                await stopRecordingAndProcess(menuBarController: menuBarController)
             } else {
-                await startRecording(menuBarController: menuBarController)
+                await startRecording(menuBarController: menuBarController, mode: mode)
             }
         }
     }
@@ -1028,7 +1111,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         let effectiveModel = effectiveProvider == LLMRuntimeConfiguration.Provider.openai.rawValue
             ? runtimeConfiguration.openAIModel
             : runtimeConfiguration.ollamaModel
-        let mode = Self.interactionMode(rawTranscript: response.raw_transcript, revisedText: response.revised_text, context: optionalContext)
+        let mode = Self.interactionMode(
+            rawTranscript: response.raw_transcript,
+            revisedText: response.revised_text,
+            editSummary: response.edit_summary,
+            context: optionalContext
+        )
         let interaction = DictationInteraction(
             whisperOutput: response.raw_transcript,
             finalOutput: response.revised_text,
@@ -1059,8 +1147,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private static func interactionMode(
         rawTranscript: String,
         revisedText: String,
+        editSummary: String,
         context: [String: String]?
     ) -> DictationInteractionMode {
+        if editSummary.localizedCaseInsensitiveContains("Talon-lite") {
+            return .talonLite
+        }
         let selectedText = context?["selected_text"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !selectedText.isEmpty {
             return .textReplacement

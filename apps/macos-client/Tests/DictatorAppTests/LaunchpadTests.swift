@@ -139,6 +139,28 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertNoThrow(try LaunchpadLayoutLoader.decode(json))
     }
 
+    func testLayoutDecodeAcceptsTalonLiteDictationAction() throws {
+        let json = """
+        {
+          "pages": [
+            {
+              "id": "control",
+              "pads": [
+                {
+                  "x": 1,
+                  "y": 7,
+                  "color": { "r": 255, "g": 170, "b": 0 },
+                  "action": { "type": "talon_lite_dictation", "command": "toggle" }
+                }
+              ]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        XCTAssertNoThrow(try LaunchpadLayoutLoader.decode(json))
+    }
+
     func testLayoutDecodeRejectsMissingKeystrokeKey() {
         let json = """
         {
@@ -263,6 +285,7 @@ final class LaunchpadTests: XCTestCase {
             invalidationBus: bus,
             onKeystroke: nil,
             onDictationCommand: nil,
+            onTalonLiteDictationCommand: nil,
             onContextualBackspace: nil,
             onAppReload: nil,
             onLoadSafeRuntimeConfig: nil,
@@ -280,6 +303,51 @@ final class LaunchpadTests: XCTestCase {
 
         pageController.handle(PadEvent(coordinate: PadCoordinate(x: 7, y: 8), phase: .press, velocity: 100))
         XCTAssertEqual(toggleCount, 1)
+    }
+
+    func testPageFactoryDispatchesTalonLiteDictationAction() throws {
+        let bus = RenderInvalidationBus()
+        let json = """
+        {
+          "initial_page_id": "control",
+          "pages": [
+            {
+              "id": "control",
+              "pads": [
+                {
+                  "x": 1,
+                  "y": 7,
+                  "color": { "r": 255, "g": 170, "b": 0 },
+                  "action": { "type": "talon_lite_dictation", "command": "toggle" }
+                }
+              ]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let config = try LaunchpadLayoutLoader.decode(json)
+
+        var commands: [LaunchpadActionConfig.DictationCommand] = []
+        let factory = LaunchpadPageFactory(
+            invalidationBus: bus,
+            onKeystroke: nil,
+            onDictationCommand: nil,
+            onTalonLiteDictationCommand: { commands.append($0) },
+            onContextualBackspace: nil,
+            onAppReload: nil,
+            onLoadSafeRuntimeConfig: nil,
+            onToggleFullscreenOverlay: nil,
+            recordStatusColorProvider: { .off },
+            shiftLatchColorProvider: { .off },
+            onModifierPress: nil,
+            onModifierRelease: nil
+        )
+        let pages = factory.makePages(from: config)
+        let pageController = LaunchpadPageController(invalidationBus: bus)
+        pageController.setPages(pages, initialPageID: config.initialPageID)
+
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 1, y: 7), phase: .press, velocity: 100))
+        XCTAssertEqual(commands, [.toggle])
     }
 
     func testPageControllerControlLayerSlotAddRemove() {

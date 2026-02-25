@@ -42,6 +42,7 @@ struct LaunchpadActionConfig: Decodable {
     enum ActionType: String, Decodable {
         case keystroke
         case dictation
+        case talonLiteDictation = "talon_lite_dictation"
         case contextualBackspace = "contextual_backspace"
         case appReload = "app_reload"
         case modifierLatch = "modifier_latch"
@@ -142,6 +143,14 @@ enum LaunchpadLayoutLoader {
                             userInfo: [NSLocalizedDescriptionKey: "Dictation action missing command at (\(pad.x),\(pad.y)) page \(page.id)"]
                         )
                     }
+                case .talonLiteDictation:
+                    guard pad.action.command != nil else {
+                        throw NSError(
+                            domain: "LaunchpadLayoutLoader",
+                            code: 8,
+                            userInfo: [NSLocalizedDescriptionKey: "Talon-lite dictation action missing command at (\(pad.x),\(pad.y)) page \(page.id)"]
+                        )
+                    }
                 case .contextualBackspace:
                     break
                 case .appReload:
@@ -171,6 +180,7 @@ final class LaunchpadPageFactory {
     private let invalidationBus: RenderInvalidationBus
     private let onKeystroke: ((KeyboardKey, Set<KeyboardModifier>) -> Void)?
     private let onDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?
+    private let onTalonLiteDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?
     private let onContextualBackspace: (() -> Void)?
     private let onAppReload: (() -> Void)?
     private let onLoadSafeRuntimeConfig: (() -> Void)?
@@ -184,6 +194,7 @@ final class LaunchpadPageFactory {
         invalidationBus: RenderInvalidationBus,
         onKeystroke: ((KeyboardKey, Set<KeyboardModifier>) -> Void)?,
         onDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?,
+        onTalonLiteDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?,
         onContextualBackspace: (() -> Void)?,
         onAppReload: (() -> Void)?,
         onLoadSafeRuntimeConfig: (() -> Void)?,
@@ -196,6 +207,7 @@ final class LaunchpadPageFactory {
         self.invalidationBus = invalidationBus
         self.onKeystroke = onKeystroke
         self.onDictationCommand = onDictationCommand
+        self.onTalonLiteDictationCommand = onTalonLiteDictationCommand
         self.onContextualBackspace = onContextualBackspace
         self.onAppReload = onAppReload
         self.onLoadSafeRuntimeConfig = onLoadSafeRuntimeConfig
@@ -209,6 +221,7 @@ final class LaunchpadPageFactory {
     func makePages(from config: LaunchpadLayoutConfig) -> [LaunchpadPage] {
         let onKeystroke = self.onKeystroke
         let onDictationCommand = self.onDictationCommand
+        let onTalonLiteDictationCommand = self.onTalonLiteDictationCommand
         let onContextualBackspace = self.onContextualBackspace
         let onAppReload = self.onAppReload
         let onLoadSafeRuntimeConfig = self.onLoadSafeRuntimeConfig
@@ -240,6 +253,17 @@ final class LaunchpadPageFactory {
                 } else {
                     TraceLogger.log(
                         "launchpad action missing dictation command page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
+                    )
+                }
+            case .talonLiteDictation:
+                if let command = padConfig.action.command {
+                    TraceLogger.log(
+                        "launchpad action talon_lite_dictation page=\(pageID) x=\(padConfig.x) y=\(padConfig.y) command=\(command.rawValue)"
+                    )
+                    onTalonLiteDictationCommand?(command)
+                } else {
+                    TraceLogger.log(
+                        "launchpad action missing talon_lite_dictation command page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
                     )
                 }
             case .contextualBackspace:
@@ -275,7 +299,7 @@ final class LaunchpadPageFactory {
                 switch padConfig.action.type {
                 case .keystroke, .contextualBackspace:
                     shouldRepeat = true
-                case .dictation, .appReload, .modifierLatch, .loadSafeRuntimeConfig, .toggleFullscreenOverlay:
+                case .dictation, .talonLiteDictation, .appReload, .modifierLatch, .loadSafeRuntimeConfig, .toggleFullscreenOverlay:
                     shouldRepeat = false
                 }
                 let cell: LaunchpadCellType
