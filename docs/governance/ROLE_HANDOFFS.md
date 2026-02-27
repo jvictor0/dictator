@@ -1,6 +1,15 @@
 # Role Handoffs
 
-All handoff artifacts must be stored in `/work-items/<work-item-id>/`.
+All handoff artifacts must be stored in `/work-items/<work-item-id>/slices/<slice-id>/` for new automated runs.
+Legacy root-level work item artifacts remain valid for historical tasks.
+
+## Mayor -> Architect
+
+Allowed setup handoff actions:
+
+- Create new slice scaffold path and starter files.
+- Open or update issue files under `issues/`.
+- Trigger sequenced workflow execution via `scripts/run-workflow.py`.
 
 ## Architect -> Implementer
 
@@ -42,6 +51,7 @@ Required contents:
 - Findings list with severity
 - Approval or required fixes
 - Residual risk statement
+- Issue artifacts under `issues/issue-<n>.md` whenever issues are identified
 
 Routing rule:
 
@@ -64,3 +74,7 @@ Routing rule:
 
 - Legitimate bug found -> Implementer (then Reviewer, then Tester)
 - No blocking bugs -> Merge
+
+Issue closure rule:
+
+- Work item slice is not done until all issue files in `issues/` are marked `Status: RESOLVED`.

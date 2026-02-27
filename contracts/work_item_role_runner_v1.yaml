@@ -1,0 +1,62 @@
+version: v1
+service: work-item-role-runner
+endpoints:
+  - path: /run-role
+    method: POST
+    request:
+      content_type: application/json
+      body:
+        type: object
+        required: [work_item_id, slice_id, role]
+        properties:
+          work_item_id: { type: string }
+          slice_id: { type: string }
+          role:
+            type: string
+            enum: [architect, implementer, reviewer, tester]
+    response:
+      type: object
+      required:
+        [
+          run_id,
+          status,
+          work_item_id,
+          slice_id,
+          role,
+          artifacts_written,
+          issues_open,
+          issues_created,
+          next_allowed_roles,
+          message
+        ]
+      properties:
+        run_id: { type: string }
+        status:
+          type: string
+          enum: [success, validation_error, execution_error]
+        work_item_id: { type: string }
+        slice_id: { type: string }
+        role:
+          type: string
+          enum: [architect, implementer, reviewer, tester]
+        artifacts_written:
+          type: array
+          items: { type: string }
+        issues_open:
+          type: array
+          items: { type: string }
+        issues_created:
+          type: array
+          items: { type: string }
+        next_allowed_roles:
+          type: array
+          items:
+            type: string
+            enum: [architect, implementer, reviewer, tester]
+        message: { type: string }
+http_statuses:
+  success: 200
+  bad_request: 400
+  not_found: 404
+  lifecycle_conflict: 409
+  server_error: 500

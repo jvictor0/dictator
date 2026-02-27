@@ -4,6 +4,7 @@ This file defines role orchestration and minimum delivery standards for this rep
 
 ## Roles
 
+- `mayor`: create new work-item slices, create/update work-item issues, and run workflow orchestration script only
 - `architect`: design interfaces, tradeoffs, and ADR updates
 - `implementer`: implement scoped changes against approved spec and architecture
 - `reviewer`: perform code review focused on regressions, risks, and contract drift
@@ -12,6 +13,10 @@ This file defines role orchestration and minimum delivery standards for this rep
 ## Work item folder (required)
 
 Each task must use a dedicated folder: `/work-items/<work-item-id>/`.
+
+Canonical automation path for new work uses slices:
+
+- `/work-items/<work-item-id>/slices/<slice-id>/`
 
 Minimum files:
 
@@ -25,6 +30,12 @@ Optional files:
 
 - `implementer-pass-2.md`
 - `reviewer-pass-2.md`
+
+Per-slice issue artifacts (required when issues are found):
+
+- `issues/issue-0001.md`
+- `issues/issue-0002.md`
+- ...
 
 ## Workflow order
 
@@ -41,6 +52,11 @@ Do not skip a role without documenting a reason in the work item notes.
 
 ## Role constraints
 
+- Mayor may only:
+  - create new work item/slice folders and starter artifacts (canonical command: `scripts/mayor-bootstrap.sh --work-item <id> --slice <id>`)
+  - create/update issue files under slice `issues/`
+  - execute `scripts/run-workflow.py`
+- Mayor may not modify production code, contracts, or role output artifacts for other roles.
 - Implementer may not change spec/scope in `SPEC.md`.
 - If spec is insufficient or conflicting, implementer must record a blocker and stop.
 - Tester may not change production code.
@@ -51,6 +67,7 @@ Do not skip a role without documenting a reason in the work item notes.
 - Contract compatibility with `/contracts/dictation_v1.yaml`
 - Tests added/updated for changed behavior
 - No unresolved `P0/P1` findings from reviewer or tester
+- No unresolved per-slice issue files with `Status: OPEN`
 - Documentation updated when interface behavior changes
 - Work item handoff files are complete for the executed passes
 
