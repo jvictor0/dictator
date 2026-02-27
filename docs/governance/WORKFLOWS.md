@@ -18,13 +18,14 @@ Canonical automation entrypoint for a single role run:
 - `scripts/run-role.sh --work-item <id> --slice <id> --role <role>`
 - `scripts/run-workflow.py --work-item <id> --slice <id>` for sequenced workflow execution with artifact reporting
 - `scripts/mayor-bootstrap.sh --work-item <id> --slice <id>` for Mayor scaffold initialization
+- `scripts/mayor-slice-from-issue.sh --work-item <id> --issue <issue-id>` for Mayor issue-driven slice creation
 
 ## Pass limits and stop condition
 
 - Implementer pass limit per work item: 2.
 - Implementer cannot alter spec during passes.
 - On unresolved issues after pass 2, create a blocker note in the work item folder and stop.
-- A slice is not done while any issue file in `issues/` has `Status: OPEN`.
+- A slice is not done while any issue file in work-item `issues/` has `Status: OPEN`.
 
 ## Fast path
 

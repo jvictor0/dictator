@@ -18,8 +18,8 @@ Recommended starter files:
 
 Issue files (create when issues are found):
 
-- `issues/issue-0001.md`
-- `issues/issue-0002.md`
+- `/work-items/<work-item-id>/issues/issue-0001.md`
+- `/work-items/<work-item-id>/issues/issue-0002.md`
 
 Optional second-pass files:
 

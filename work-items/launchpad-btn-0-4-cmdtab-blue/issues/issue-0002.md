@@ -1,6 +1,7 @@
 # Issue 0002: Workflow runner JSON encoding breaks when codex logs include quoted text
 
 - Status: OPEN
+- Slice-ID: map-0-4-to-cmdtab-blue
 - Reported by: mayor
 - Source: workflow debug run
 

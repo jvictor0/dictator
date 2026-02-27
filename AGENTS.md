@@ -31,10 +31,10 @@ Optional files:
 - `implementer-pass-2.md`
 - `reviewer-pass-2.md`
 
-Per-slice issue artifacts (required when issues are found):
+Work-item issue artifacts (required when issues are found):
 
-- `issues/issue-0001.md`
-- `issues/issue-0002.md`
+- `/work-items/<work-item-id>/issues/issue-0001.md`
+- `/work-items/<work-item-id>/issues/issue-0002.md`
 - ...
 
 ## Workflow order
@@ -54,7 +54,8 @@ Do not skip a role without documenting a reason in the work item notes.
 
 - Mayor may only:
   - create new work item/slice folders and starter artifacts (canonical command: `scripts/mayor-bootstrap.sh --work-item <id> --slice <id>`)
-  - create/update issue files under slice `issues/`
+  - create a new slice from an existing work-item issue (canonical command: `scripts/mayor-slice-from-issue.sh --work-item <id> --issue <issue-id> [--slice <id>]`)
+  - create/update issue files under work-item `issues/`
   - execute `scripts/run-workflow.py`
 - Mayor may not modify production code, contracts, or role output artifacts for other roles.
 - Implementer may not change spec/scope in `SPEC.md`.
@@ -67,7 +68,7 @@ Do not skip a role without documenting a reason in the work item notes.
 - Contract compatibility with `/contracts/dictation_v1.yaml`
 - Tests added/updated for changed behavior
 - No unresolved `P0/P1` findings from reviewer or tester
-- No unresolved per-slice issue files with `Status: OPEN`
+- No unresolved work-item issue files with `Status: OPEN`
 - Documentation updated when interface behavior changes
 - Work item handoff files are complete for the executed passes
 

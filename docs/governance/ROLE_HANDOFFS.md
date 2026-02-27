@@ -8,7 +8,7 @@ Legacy root-level work item artifacts remain valid for historical tasks.
 Allowed setup handoff actions:
 
 - Create new slice scaffold path and starter files.
-- Open or update issue files under `issues/`.
+- Open or update issue files under `/work-items/<work-item-id>/issues/`.
 - Trigger sequenced workflow execution via `scripts/run-workflow.py`.
 
 ## Architect -> Implementer
@@ -51,7 +51,7 @@ Required contents:
 - Findings list with severity
 - Approval or required fixes
 - Residual risk statement
-- Issue artifacts under `issues/issue-<n>.md` whenever issues are identified
+- Issue artifacts under `/work-items/<work-item-id>/issues/issue-<n>.md` whenever issues are identified
 
 Routing rule:
 
@@ -77,4 +77,4 @@ Routing rule:
 
 Issue closure rule:
 
-- Work item slice is not done until all issue files in `issues/` are marked `Status: RESOLVED`.
+- Work item slice is not done until all work-item issue files in `/work-items/<work-item-id>/issues/` are marked `Status: RESOLVED`.

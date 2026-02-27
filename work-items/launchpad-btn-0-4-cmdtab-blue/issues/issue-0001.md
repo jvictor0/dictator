@@ -1,6 +1,7 @@
 # Issue 0001: Map launchpad button (0,4) to Command+Tab and set blue color
 
 - Status: OPEN
+- Slice-ID: map-0-4-to-cmdtab-blue
 - Reported by: mayor
 - Source: user request
 

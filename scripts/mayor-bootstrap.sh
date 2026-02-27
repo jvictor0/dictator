@@ -47,9 +47,9 @@ fi
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 WORK_ITEM_PATH="$REPO_ROOT/work-items/$WORK_ITEM_ID"
 SLICE_PATH="$WORK_ITEM_PATH/slices/$SLICE_ID"
-ISSUES_PATH="$SLICE_PATH/issues"
+ISSUES_PATH="$WORK_ITEM_PATH/issues"
 
-mkdir -p "$ISSUES_PATH"
+mkdir -p "$SLICE_PATH" "$ISSUES_PATH"
 
 if [[ ! -e "$SLICE_PATH/SPEC.md" ]]; then
   cat > "$SLICE_PATH/SPEC.md" <<'EOF_SPEC'
@@ -115,5 +115,5 @@ Artifacts:
 - $( [[ -f "$SLICE_PATH/implementer-pass-1.md" ]] && echo "implementer-pass-1.md" )
 - $( [[ -f "$SLICE_PATH/reviewer-pass-1.md" ]] && echo "reviewer-pass-1.md" )
 - $( [[ -f "$SLICE_PATH/tester.md" ]] && echo "tester.md" )
-- issues/
+- ../../issues/
 OUT

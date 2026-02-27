@@ -73,23 +73,29 @@ def list_artifacts(slice_path: Path) -> list[str]:
     return artifacts
 
 
-def read_issue_statuses(slice_path: Path) -> list[str]:
-    issues_dir = slice_path / "issues"
+def read_issue_statuses(work_item_path: Path, slice_id: str) -> list[str]:
+    issues_dir = work_item_path / "issues"
     if not issues_dir.exists():
         return []
 
     statuses: list[str] = []
     for issue_file in sorted(issues_dir.glob("issue-*.md")):
         status = "UNKNOWN"
+        issue_slice_id = ""
         try:
             for raw_line in issue_file.read_text(encoding="utf-8").splitlines():
                 line = raw_line.strip()
-                if line.lower().startswith("status:"):
-                    status = line.split(":", 1)[1].strip().upper() or "UNKNOWN"
-                    break
+                normalized = line.lstrip("-").strip()
+                if normalized.lower().startswith("slice-id:"):
+                    issue_slice_id = normalized.split(":", 1)[1].strip()
+                if normalized.lower().startswith("status:"):
+                    status = normalized.split(":", 1)[1].strip().upper() or "UNKNOWN"
+            if issue_slice_id and issue_slice_id != slice_id:
+                continue
         except OSError:
             status = "UNREADABLE"
-        statuses.append(f"{issue_file.name}: {status}")
+        suffix = f" (Slice-ID: {issue_slice_id})" if issue_slice_id else ""
+        statuses.append(f"{issue_file.name}: {status}{suffix}")
     return statuses
 
 
@@ -152,7 +158,9 @@ def print_run_report(
     exit_code: int,
     payload: dict[str, Any],
     stderr: str,
+    work_item_path: Path,
     slice_path: Path,
+    slice_id: str,
 ) -> None:
     print(f"\n=== Run {run_index}: {requested_role} ===")
     print(f"exit_code: {exit_code}")
@@ -183,7 +191,7 @@ def print_run_report(
         for artifact in artifacts:
             print(f"  - {artifact}")
 
-    issue_statuses = read_issue_statuses(slice_path)
+    issue_statuses = read_issue_statuses(work_item_path, slice_id)
     print("issue_statuses:")
     if not issue_statuses:
         print("  - (none)")
@@ -218,6 +226,7 @@ def main() -> int:
         return 2
 
     slice_path = repo_root / "work-items" / args.work_item / "slices" / args.slice_id
+    work_item_path = repo_root / "work-items" / args.work_item
 
     final_exit = 0
     for index, role in enumerate(sequence, start=1):
@@ -230,7 +239,7 @@ def main() -> int:
             extra_env=extra_env,
         )
 
-        print_run_report(index, role, exit_code, payload, stderr, slice_path)
+        print_run_report(index, role, exit_code, payload, stderr, work_item_path, slice_path, args.slice_id)
 
         if exit_code != 0:
             final_exit = exit_code

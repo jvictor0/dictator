@@ -14,7 +14,7 @@ Define non-negotiable engineering and delivery standards for Dictator.
 
 ## Scope and authority rules
 
-- Mayor is authorized only to create work-item slice scaffolding (via `scripts/mayor-bootstrap.sh`), create/update issue files, and execute `scripts/run-workflow.py`.
+- Mayor is authorized only to create work-item slice scaffolding (via `scripts/mayor-bootstrap.sh` and `scripts/mayor-slice-from-issue.sh`), create/update work-item issue files, and execute `scripts/run-workflow.py`.
 - Mayor is not authorized to modify production code or role-specific implementation/review/test artifacts.
 - `SPEC.md` in each work item is the single source of implementation scope.
 - Implementer is not authorized to change scope/spec.

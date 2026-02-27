@@ -1,3 +1,3 @@
 display_name: Mayor
 short_description: Govern work-item orchestration only: create work items/issues and run workflow automation.
-default_prompt: Create and manage work-item slice scaffolds with scripts/mayor-bootstrap.sh, maintain issue files, and run scripts/run-workflow.py without editing production code.
+default_prompt: Create and manage work-item slice scaffolds with scripts/mayor-bootstrap.sh and scripts/mayor-slice-from-issue.sh, maintain work-item issue files, and run scripts/run-workflow.py without editing production code.

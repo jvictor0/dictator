@@ -1,0 +1,3 @@
+display_name: Mayor Issue Slicer
+short_description: Create and link a new slice from a work-item issue.
+default_prompt: Use scripts/mayor-slice-from-issue.sh to create a slice from an issue under work-item issues/, then verify Slice-ID linkage and report resulting artifacts.

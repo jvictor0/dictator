@@ -141,22 +141,35 @@ collect_open_issues() {
   fi
   local file
   while IFS= read -r file; do
-    local status
+    local status slice_id
     status=$(awk '
-      BEGIN { IGNORECASE=1 }
       {
         line=$0
         sub(/^[[:space:]]*-[[:space:]]*/, "", line)
-        if (line ~ /^[[:space:]]*status[[:space:]]*:/) {
-          sub(/^[[:space:]]*status[[:space:]]*:[[:space:]]*/, "", line)
+        if (tolower(line) ~ /^[[:space:]]*status[[:space:]]*:/) {
+          sub(/^[[:space:]]*[Ss][Tt][Aa][Tt][Uu][Ss][[:space:]]*:[[:space:]]*/, "", line)
           gsub(/[[:space:]]+$/, "", line)
           print toupper(line)
           exit
         }
       }
     ' "$file" || true)
+    slice_id=$(awk '
+      {
+        line=$0
+        sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+        if (tolower(line) ~ /^[[:space:]]*slice-id[[:space:]]*:/) {
+          sub(/^[[:space:]]*[Ss][Ll][Ii][Cc][Ee]-[Ii][Dd][[:space:]]*:[[:space:]]*/, "", line)
+          gsub(/[[:space:]]+$/, "", line)
+          print line
+          exit
+        }
+      }
+    ' "$file" || true)
     if [[ "$status" == "OPEN" ]]; then
-      ISSUES_OPEN+=("${file#$REPO_ROOT/}")
+      if [[ -z "$slice_id" || "$slice_id" == "$SLICE_ID" ]]; then
+        ISSUES_OPEN+=("${file#$REPO_ROOT/}")
+      fi
     fi
   done < <(find "$ISSUES_PATH" -maxdepth 1 -type f -name 'issue-*.md' | sort)
 }
@@ -167,18 +180,21 @@ has_open_issues() {
 }
 
 snapshot_files() {
-  local base="$1"
-  local out="$2"
+  local out="$1"
+  shift
   : > "$out"
-  if [[ ! -d "$base" ]]; then
-    return
-  fi
-  local file rel hash
-  while IFS= read -r file; do
-    rel=${file#$REPO_ROOT/}
-    hash=$(shasum -a 256 "$file" | awk '{print $1}')
-    printf '%s\t%s\n' "$rel" "$hash" >> "$out"
-  done < <(find "$base" -type f | sort)
+  local base file rel hash
+  for base in "$@"; do
+    if [[ ! -d "$base" ]]; then
+      continue
+    fi
+    while IFS= read -r file; do
+      rel=${file#$REPO_ROOT/}
+      hash=$(shasum -a 256 "$file" | awk '{print $1}')
+      printf '%s\t%s\n' "$rel" "$hash" >> "$out"
+    done < <(find "$base" -type f | sort)
+  done
+  sort -u -o "$out" "$out"
 }
 
 compute_artifact_changes() {
@@ -257,7 +273,7 @@ Hard rules:
 1. Perform only this role and only files required by this role.
 2. Enforce strict bylaw sequencing and pass limits.
 3. Do not modify SPEC scope during implementer runs.
-4. Use per-slice issues at $ISSUES_PATH, file names issue-0001.md, issue-0002.md, etc.
+4. Use work-item issues at $ISSUES_PATH, file names issue-0001.md, issue-0002.md, etc.
 5. If no changes are needed, write an explicit no-op statement in the role artifact.
 6. Never create extra pass files beyond the requested pass.
 7. The role artifact for this run must end with the exact last line: pass complete
@@ -338,9 +354,9 @@ esac
 REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 WORK_ITEM_PATH="$REPO_ROOT/work-items/$WORK_ITEM_ID"
 SLICE_PATH="$WORK_ITEM_PATH/slices/$SLICE_ID"
-ISSUES_PATH="$SLICE_PATH/issues"
+ISSUES_PATH="$WORK_ITEM_PATH/issues"
 SLICE_REL="work-items/$WORK_ITEM_ID/slices/$SLICE_ID"
-ISSUES_REL="$SLICE_REL/issues"
+ISSUES_REL="work-items/$WORK_ITEM_ID/issues"
 RUN_ID="run-$(date +%Y%m%dT%H%M%S)-$$"
 
 ARTIFACTS_WRITTEN=()
@@ -366,7 +382,7 @@ PROMPT_FILE="$TMP_DIR/prompt.txt"
 BEFORE_SNAPSHOT="$TMP_DIR/before.snapshot"
 AFTER_SNAPSHOT="$TMP_DIR/after.snapshot"
 
-snapshot_files "$SLICE_PATH" "$BEFORE_SNAPSHOT"
+snapshot_files "$BEFORE_SNAPSHOT" "$SLICE_PATH" "$ISSUES_PATH"
 
 PASS_LABEL=""
 VALIDATION_MSG=""
@@ -454,7 +470,7 @@ if PASS_ARTIFACT=$(artifact_for_pass_label "$PASS_LABEL"); then
   fi
 fi
 
-snapshot_files "$SLICE_PATH" "$AFTER_SNAPSHOT"
+snapshot_files "$AFTER_SNAPSHOT" "$SLICE_PATH" "$ISSUES_PATH"
 compute_artifact_changes
 collect_open_issues
 compute_next_allowed_roles

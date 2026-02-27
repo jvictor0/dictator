@@ -7,10 +7,10 @@
 - Run: one deterministic invocation of one role for one work item slice.
 - Work item: `/work-items/<work-item-id>/`.
 - Slice: `/work-items/<work-item-id>/slices/<slice-id>/`.
-- Issue: `/work-items/<work-item-id>/slices/<slice-id>/issues/issue-<n>.md`.
+- Issue: `/work-items/<work-item-id>/issues/issue-<n>.md`.
 - Done:
   - required role artifacts exist per active slice,
-  - no issue file in that slice has `Status: OPEN`.
+  - no relevant issue file for that slice has `Status: OPEN`.
 
 ## Canonical Slice Layout
 
@@ -22,7 +22,7 @@
 - Optional:
   - `implementer-pass-2.md`
   - `reviewer-pass-2.md`
-- `issues/issue-0001.md`, `issues/issue-0002.md`, ...
+- Work-item `issues/issue-0001.md`, `issues/issue-0002.md`, ...
 
 Legacy work-item root artifact layout remains readable but new automation should use slice layout.
 
@@ -70,6 +70,7 @@ Issue files must include:
 - REST endpoint: `POST /run-role`
 - Shell entrypoint: `scripts/run-role.sh`
 - Mayor bootstrap: `scripts/mayor-bootstrap.sh --work-item <id> --slice <id>`
+- Mayor issue-to-slice: `scripts/mayor-slice-from-issue.sh --work-item <id> --issue <issue-id>`
 - Workflow orchestrator: `scripts/run-workflow.py`
 - API contract: `/contracts/work_item_role_runner_v1.yaml`
 
