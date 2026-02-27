@@ -10,6 +10,7 @@ enum KeyboardModifier: String, Decodable, Hashable {
 }
 
 enum KeyboardKey: String, Decodable {
+    case tab
     case up
     case down
     case left
@@ -24,6 +25,8 @@ enum KeyboardKey: String, Decodable {
 
     var keyCode: CGKeyCode {
         switch self {
+        case .tab:
+            return 48
         case .up:
             return 126
         case .down:

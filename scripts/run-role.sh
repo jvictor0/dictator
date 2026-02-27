@@ -7,10 +7,12 @@ Usage: run-role.sh --work-item <id> --slice <id> --role <architect|implementer|r
 USAGE
 }
 
+PASS_COMPLETE_SENTINEL="pass complete"
+
 json_escape() {
   local s="$1"
   s=${s//\\/\\\\}
-  s=${s//"/\\"}
+  s=${s//\"/\\\"}
   s=${s//$'\n'/\\n}
   s=${s//$'\r'/\\r}
   s=${s//$'\t'/\\t}
@@ -64,11 +66,47 @@ JSON
   exit "$code"
 }
 
-count_files() {
+is_pass_complete() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  local last
+  last=$(tail -n 1 "$file" | tr -d '\r')
+  [[ "$last" == "$PASS_COMPLETE_SENTINEL" ]]
+}
+
+ensure_pass_complete() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  is_pass_complete "$file"
+}
+
+count_completed_pass_files() {
   local pattern="$1"
-  local count
-  count=$(find "$SLICE_PATH" -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d ' ')
+  local count=0
+  local file
+  while IFS= read -r file; do
+    if is_pass_complete "$file"; then
+      count=$((count + 1))
+    fi
+  done < <(find "$SLICE_PATH" -maxdepth 1 -type f -name "$pattern" | sort)
   printf '%s' "$count"
+}
+
+pass_file_completed() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  is_pass_complete "$file"
+}
+
+artifact_for_pass_label() {
+  local pass_label="$1"
+  case "$pass_label" in
+    architect) printf '%s\n' "$SLICE_PATH/architect.md" ;;
+    implementer-pass-1|implementer-pass-2) printf '%s\n' "$SLICE_PATH/$pass_label.md" ;;
+    reviewer-pass-1|reviewer-pass-2) printf '%s\n' "$SLICE_PATH/$pass_label.md" ;;
+    tester) printf '%s\n' "$SLICE_PATH/tester.md" ;;
+    *) return 1 ;;
+  esac
 }
 
 latest_reviewer_file() {
@@ -85,9 +123,12 @@ reviewer_approved() {
   if ! latest=$(latest_reviewer_file); then
     return 1
   fi
+  if ! pass_file_completed "$SLICE_PATH/$latest"; then
+    return 1
+  fi
   local lower
   lower=$(tr '[:upper:]' '[:lower:]' < "$SLICE_PATH/$latest")
-  if [[ "$lower" == *"not approved"* ]] || [[ "$lower" == *"required fixes"* ]]; then
+  if [[ "$lower" == *"not approved"* ]]; then
     return 1
   fi
   [[ "$lower" == *"approved"* ]]
@@ -101,7 +142,19 @@ collect_open_issues() {
   local file
   while IFS= read -r file; do
     local status
-    status=$(awk -F': *' 'tolower($1)=="status" {print toupper($2); exit}' "$file" || true)
+    status=$(awk '
+      BEGIN { IGNORECASE=1 }
+      {
+        line=$0
+        sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+        if (line ~ /^[[:space:]]*status[[:space:]]*:/) {
+          sub(/^[[:space:]]*status[[:space:]]*:[[:space:]]*/, "", line)
+          gsub(/[[:space:]]+$/, "", line)
+          print toupper(line)
+          exit
+        }
+      }
+    ' "$file" || true)
     if [[ "$status" == "OPEN" ]]; then
       ISSUES_OPEN+=("${file#$REPO_ROOT/}")
     fi
@@ -138,8 +191,9 @@ compute_artifact_changes() {
 
   while IFS= read -r rel; do
     [[ -n "$rel" ]] && ISSUES_CREATED+=("$rel")
-  done < <(awk -F'\t' 'NR==FNR {before[$1]=1; next} {if ($1 ~ issuePattern && !($1 in before)) print $1}' \
+  done < <(awk -F'\t' \
     -v issuePattern="^"$(printf '%s' "$ISSUES_REL" | sed 's/[.[\\*^$(){}?+|]/\\&/g')"/issue-" \
+    'NR==FNR {before[$1]=1; next} {if ($1 ~ issuePattern && !($1 in before)) print $1}' \
     "$BEFORE_SNAPSHOT" "$AFTER_SNAPSHOT" | sort)
 }
 
@@ -157,35 +211,24 @@ compute_next_allowed_roles() {
   fi
 
   local spec="$SLICE_PATH/SPEC.md"
-  local implementer_count reviewer_count tester_exists
-  implementer_count=$(count_files 'implementer-pass-*.md')
-  reviewer_count=$(count_files 'reviewer-pass-*.md')
-  tester_exists=0
-  [[ -f "$SLICE_PATH/tester.md" ]] && tester_exists=1
 
   NEXT_ALLOWED_ROLES+=("architect")
 
   if [[ -f "$spec" ]]; then
-    if [[ "$implementer_count" -eq 0 ]]; then
+    if ! pass_file_completed "$SLICE_PATH/implementer-pass-1.md"; then
       NEXT_ALLOWED_ROLES+=("implementer")
-    elif [[ "$implementer_count" -eq 1 ]]; then
-      if has_open_issues; then
-        NEXT_ALLOWED_ROLES+=("implementer")
-      fi
+    elif has_open_issues && ! pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
+      NEXT_ALLOWED_ROLES+=("implementer")
     fi
   fi
 
-  if [[ "$reviewer_count" -eq 0 ]]; then
-    if [[ -f "$SLICE_PATH/implementer-pass-1.md" ]]; then
-      NEXT_ALLOWED_ROLES+=("reviewer")
-    fi
-  elif [[ "$reviewer_count" -eq 1 ]]; then
-    if [[ -f "$SLICE_PATH/implementer-pass-2.md" ]]; then
-      NEXT_ALLOWED_ROLES+=("reviewer")
-    fi
+  if pass_file_completed "$SLICE_PATH/implementer-pass-1.md" && ! pass_file_completed "$SLICE_PATH/reviewer-pass-1.md"; then
+    NEXT_ALLOWED_ROLES+=("reviewer")
+  elif pass_file_completed "$SLICE_PATH/implementer-pass-2.md" && pass_file_completed "$SLICE_PATH/reviewer-pass-1.md" && ! pass_file_completed "$SLICE_PATH/reviewer-pass-2.md"; then
+    NEXT_ALLOWED_ROLES+=("reviewer")
   fi
 
-  if reviewer_approved; then
+  if reviewer_approved && ! pass_file_completed "$SLICE_PATH/tester.md"; then
     NEXT_ALLOWED_ROLES+=("tester")
   fi
 
@@ -217,6 +260,7 @@ Hard rules:
 4. Use per-slice issues at $ISSUES_PATH, file names issue-0001.md, issue-0002.md, etc.
 5. If no changes are needed, write an explicit no-op statement in the role artifact.
 6. Never create extra pass files beyond the requested pass.
+7. The role artifact for this run must end with the exact last line: pass complete
 
 Expected output artifact for this run:
 - architect: architect.md (and SPEC.md if missing or update requested)
@@ -324,50 +368,60 @@ AFTER_SNAPSHOT="$TMP_DIR/after.snapshot"
 
 snapshot_files "$SLICE_PATH" "$BEFORE_SNAPSHOT"
 
-implementer_count=$(count_files 'implementer-pass-*.md')
-reviewer_count=$(count_files 'reviewer-pass-*.md')
-
 PASS_LABEL=""
 VALIDATION_MSG=""
+SHORT_CIRCUIT_MSG=""
 
 case "$ROLE" in
   architect)
     PASS_LABEL="architect"
+    if pass_file_completed "$SLICE_PATH/architect.md"; then
+      SHORT_CIRCUIT_MSG="pass already complete: architect"
+    fi
     ;;
   implementer)
     if [[ ! -f "$SLICE_PATH/SPEC.md" ]]; then
       VALIDATION_MSG="implementer requires SPEC.md"
-    elif [[ "$implementer_count" -eq 0 ]]; then
+    elif pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
+      PASS_LABEL="implementer-pass-2"
+      SHORT_CIRCUIT_MSG="pass already complete: implementer-pass-2"
+    elif ! pass_file_completed "$SLICE_PATH/implementer-pass-1.md"; then
       PASS_LABEL="implementer-pass-1"
-    elif [[ "$implementer_count" -eq 1 ]]; then
-      if has_open_issues; then
-        PASS_LABEL="implementer-pass-2"
-      else
-        VALIDATION_MSG="implementer pass-2 requires open reviewer/tester issues"
+    elif has_open_issues; then
+      PASS_LABEL="implementer-pass-2"
+      if pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
+        SHORT_CIRCUIT_MSG="pass already complete: implementer-pass-2"
       fi
     else
-      VALIDATION_MSG="implementer pass limit reached (max 2)"
+      PASS_LABEL="implementer-pass-1"
+      SHORT_CIRCUIT_MSG="pass already complete: implementer-pass-1"
     fi
     ;;
   reviewer)
-    if [[ "$reviewer_count" -eq 0 ]]; then
-      if [[ -f "$SLICE_PATH/implementer-pass-1.md" ]]; then
+    if pass_file_completed "$SLICE_PATH/reviewer-pass-2.md"; then
+      PASS_LABEL="reviewer-pass-2"
+      SHORT_CIRCUIT_MSG="pass already complete: reviewer-pass-2"
+    elif ! pass_file_completed "$SLICE_PATH/reviewer-pass-1.md"; then
+      if pass_file_completed "$SLICE_PATH/implementer-pass-1.md"; then
         PASS_LABEL="reviewer-pass-1"
       else
         VALIDATION_MSG="reviewer pass-1 requires implementer-pass-1.md"
       fi
-    elif [[ "$reviewer_count" -eq 1 ]]; then
-      if [[ -f "$SLICE_PATH/implementer-pass-2.md" ]]; then
-        PASS_LABEL="reviewer-pass-2"
-      else
-        VALIDATION_MSG="reviewer pass-2 requires implementer-pass-2.md"
+    elif pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
+      PASS_LABEL="reviewer-pass-2"
+      if pass_file_completed "$SLICE_PATH/reviewer-pass-2.md"; then
+        SHORT_CIRCUIT_MSG="pass already complete: reviewer-pass-2"
       fi
     else
-      VALIDATION_MSG="reviewer pass limit reached (max 2)"
+      PASS_LABEL="reviewer-pass-1"
+      SHORT_CIRCUIT_MSG="pass already complete: reviewer-pass-1"
     fi
     ;;
   tester)
-    if reviewer_approved; then
+    if pass_file_completed "$SLICE_PATH/tester.md"; then
+      PASS_LABEL="tester"
+      SHORT_CIRCUIT_MSG="pass already complete: tester"
+    elif reviewer_approved; then
       PASS_LABEL="tester"
     else
       VALIDATION_MSG="tester requires approved reviewer pass"
@@ -381,8 +435,24 @@ if [[ -n "$VALIDATION_MSG" ]]; then
   emit_result "validation_error" "$VALIDATION_MSG" 2
 fi
 
+if [[ -n "$SHORT_CIRCUIT_MSG" ]]; then
+  collect_open_issues
+  compute_next_allowed_roles
+  emit_result "success" "$SHORT_CIRCUIT_MSG" 0
+fi
+
 build_prompt "$PASS_LABEL"
 run_codex
+
+PASS_ARTIFACT=""
+if PASS_ARTIFACT=$(artifact_for_pass_label "$PASS_LABEL"); then
+  if [[ ! -f "$PASS_ARTIFACT" ]]; then
+    emit_result "validation_error" "expected role artifact not found: ${PASS_ARTIFACT#$REPO_ROOT/}" 2
+  fi
+  if ! ensure_pass_complete "$PASS_ARTIFACT"; then
+    emit_result "validation_error" "role artifact missing completion sentinel on last line: ${PASS_ARTIFACT#$REPO_ROOT/}" 2
+  fi
+fi
 
 snapshot_files "$SLICE_PATH" "$AFTER_SNAPSHOT"
 compute_artifact_changes

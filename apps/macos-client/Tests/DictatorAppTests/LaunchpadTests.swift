@@ -234,6 +234,34 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertEqual(decoded, .space)
     }
 
+    func testDefaultLayoutMapsZeroFourToCommandTabWithBlueColor() throws {
+        let config = try LaunchpadLayoutLoader.loadDefault()
+        guard let arrowsPage = config.pages.first(where: { $0.id == "arrows" }) else {
+            XCTFail("Expected arrows page in default layout")
+            return
+        }
+
+        guard let target = arrowsPage.pads.first(where: { $0.x == 0 && $0.y == 4 }) else {
+            XCTFail("Expected pad at (0,4) in arrows page")
+            return
+        }
+
+        XCTAssertEqual(target.action.type, .keystroke)
+        XCTAssertEqual(target.action.key, .tab)
+        XCTAssertEqual(target.action.modifiers, [.command])
+        XCTAssertEqual(target.color.color, PadColor(r: 40, g: 140, b: 255))
+
+        guard let unchangedNeighbor = arrowsPage.pads.first(where: { $0.x == 4 && $0.y == 4 }) else {
+            XCTFail("Expected neighbor pad at (4,4) in arrows page")
+            return
+        }
+
+        XCTAssertEqual(unchangedNeighbor.action.type, .keystroke)
+        XCTAssertEqual(unchangedNeighbor.action.key, .c)
+        XCTAssertEqual(unchangedNeighbor.action.modifiers, [.command])
+        XCTAssertEqual(unchangedNeighbor.color.color, PadColor(r: 50, g: 160, b: 80))
+    }
+
     func testSingleColorSysExUpdateExpandsToAllAddressableCoordinates() {
         var cached: [PadCoordinate: PadColor] = [:]
         let target = PadCoordinate(x: 2, y: 3)

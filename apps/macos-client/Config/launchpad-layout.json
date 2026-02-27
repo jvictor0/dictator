@@ -49,6 +49,12 @@
           "action": { "type": "modifier_latch", "modifier": "shift" }
         },
         {
+          "x": 0,
+          "y": 4,
+          "color": { "r": 40, "g": 140, "b": 255 },
+          "action": { "type": "keystroke", "key": "tab", "modifiers": ["command"] }
+        },
+        {
           "x": 4,
           "y": 4,
           "color": { "r": 50, "g": 160, "b": 80 },
