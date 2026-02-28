@@ -179,6 +179,75 @@ has_open_issues() {
   [[ ${#ISSUES_OPEN[@]} -gt 0 ]]
 }
 
+collect_open_rework_issues() {
+  local issues=()
+  if [[ ! -d "$ISSUES_PATH" ]]; then
+    printf '%s\n' ""
+    return
+  fi
+
+  local file
+  while IFS= read -r file; do
+    local status slice_id reported_by
+    status=$(awk '
+      {
+        line=$0
+        sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+        if (tolower(line) ~ /^[[:space:]]*status[[:space:]]*:/) {
+          sub(/^[[:space:]]*[Ss][Tt][Aa][Tt][Uu][Ss][[:space:]]*:[[:space:]]*/, "", line)
+          gsub(/[[:space:]]+$/, "", line)
+          print toupper(line)
+          exit
+        }
+      }
+    ' "$file" || true)
+
+    slice_id=$(awk '
+      {
+        line=$0
+        sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+        if (tolower(line) ~ /^[[:space:]]*slice-id[[:space:]]*:/) {
+          sub(/^[[:space:]]*[Ss][Ll][Ii][Cc][Ee]-[Ii][Dd][[:space:]]*:[[:space:]]*/, "", line)
+          gsub(/[[:space:]]+$/, "", line)
+          print line
+          exit
+        }
+      }
+    ' "$file" || true)
+
+    reported_by=$(awk '
+      {
+        line=$0
+        sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+        if (tolower(line) ~ /^[[:space:]]*reported by[[:space:]]*:/) {
+          sub(/^[[:space:]]*[Rr][Ee][Pp][Oo][Rr][Tt][Ee][Dd][[:space:]]+[Bb][Yy][[:space:]]*:[[:space:]]*/, "", line)
+          gsub(/[[:space:]]+$/, "", line)
+          print tolower(line)
+          exit
+        }
+      }
+    ' "$file" || true)
+
+    if [[ "$status" != "OPEN" ]]; then
+      continue
+    fi
+    if [[ -n "$slice_id" && "$slice_id" != "$SLICE_ID" ]]; then
+      continue
+    fi
+    if [[ "$reported_by" == "reviewer" || "$reported_by" == "tester" ]]; then
+      issues+=("${file#$REPO_ROOT/}")
+    fi
+  done < <(find "$ISSUES_PATH" -maxdepth 1 -type f -name 'issue-*.md' | sort)
+
+  printf '%s\n' "${issues[@]:-}"
+}
+
+has_open_rework_issues() {
+  local issues
+  issues=$(collect_open_rework_issues)
+  [[ -n "$issues" ]]
+}
+
 snapshot_files() {
   local out="$1"
   shift
@@ -233,7 +302,7 @@ compute_next_allowed_roles() {
   if [[ -f "$spec" ]]; then
     if ! pass_file_completed "$SLICE_PATH/implementer-pass-1.md"; then
       NEXT_ALLOWED_ROLES+=("implementer")
-    elif has_open_issues && ! pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
+    elif has_open_rework_issues && ! pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
       NEXT_ALLOWED_ROLES+=("implementer")
     fi
   fi
@@ -403,7 +472,7 @@ case "$ROLE" in
       SHORT_CIRCUIT_MSG="pass already complete: implementer-pass-2"
     elif ! pass_file_completed "$SLICE_PATH/implementer-pass-1.md"; then
       PASS_LABEL="implementer-pass-1"
-    elif has_open_issues; then
+    elif has_open_rework_issues; then
       PASS_LABEL="implementer-pass-2"
       if pass_file_completed "$SLICE_PATH/implementer-pass-2.md"; then
         SHORT_CIRCUIT_MSG="pass already complete: implementer-pass-2"

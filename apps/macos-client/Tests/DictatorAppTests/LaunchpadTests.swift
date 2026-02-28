@@ -94,6 +94,28 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertNoThrow(try LaunchpadLayoutLoader.decode(json))
     }
 
+    func testLayoutDecodeAcceptsNextWindowAction() throws {
+        let json = """
+        {
+          "pages": [
+            {
+              "id": "control",
+              "pads": [
+                {
+                  "x": 0,
+                  "y": 4,
+                  "color": { "r": 40, "g": 140, "b": 255 },
+                  "action": { "type": "next_window" }
+                }
+              ]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        XCTAssertNoThrow(try LaunchpadLayoutLoader.decode(json))
+    }
+
     func testLayoutDecodeAcceptsShiftModifierLatchAction() throws {
         let json = """
         {
@@ -234,7 +256,7 @@ final class LaunchpadTests: XCTestCase {
         XCTAssertEqual(decoded, .space)
     }
 
-    func testDefaultLayoutMapsZeroFourToCommandTabWithBlueColor() throws {
+    func testDefaultLayoutMapsZeroFourToNextWindowWithBlueColor() throws {
         let config = try LaunchpadLayoutLoader.loadDefault()
         guard let arrowsPage = config.pages.first(where: { $0.id == "arrows" }) else {
             XCTFail("Expected arrows page in default layout")
@@ -246,9 +268,7 @@ final class LaunchpadTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(target.action.type, .keystroke)
-        XCTAssertEqual(target.action.key, .tab)
-        XCTAssertEqual(target.action.modifiers, [.command])
+        XCTAssertEqual(target.action.type, .nextWindow)
         XCTAssertEqual(target.color.color, PadColor(r: 40, g: 140, b: 255))
 
         guard let unchangedNeighbor = arrowsPage.pads.first(where: { $0.x == 4 && $0.y == 4 }) else {
@@ -315,6 +335,8 @@ final class LaunchpadTests: XCTestCase {
             onDictationCommand: nil,
             onTalonLiteDictationCommand: nil,
             onContextualBackspace: nil,
+            onNextWindowSwitchPress: nil,
+            onNextWindowSwitchRelease: nil,
             onAppReload: nil,
             onLoadSafeRuntimeConfig: nil,
             onToggleFullscreenOverlay: {
@@ -362,6 +384,8 @@ final class LaunchpadTests: XCTestCase {
             onDictationCommand: nil,
             onTalonLiteDictationCommand: { commands.append($0) },
             onContextualBackspace: nil,
+            onNextWindowSwitchPress: nil,
+            onNextWindowSwitchRelease: nil,
             onAppReload: nil,
             onLoadSafeRuntimeConfig: nil,
             onToggleFullscreenOverlay: nil,
@@ -376,6 +400,93 @@ final class LaunchpadTests: XCTestCase {
 
         pageController.handle(PadEvent(coordinate: PadCoordinate(x: 1, y: 7), phase: .press, velocity: 100))
         XCTAssertEqual(commands, [.toggle])
+    }
+
+    func testPageFactoryDispatchesNextWindowPressAndReleaseActions() throws {
+        let bus = RenderInvalidationBus()
+        let json = """
+        {
+          "initial_page_id": "control",
+          "pages": [
+            {
+              "id": "control",
+              "pads": [
+                {
+                  "x": 0,
+                  "y": 4,
+                  "color": { "r": 40, "g": 140, "b": 255 },
+                  "action": { "type": "next_window" }
+                }
+              ]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let config = try LaunchpadLayoutLoader.decode(json)
+
+        var switchPressCount = 0
+        var switchReleaseCount = 0
+        let factory = LaunchpadPageFactory(
+            invalidationBus: bus,
+            onKeystroke: nil,
+            onDictationCommand: nil,
+            onTalonLiteDictationCommand: nil,
+            onContextualBackspace: nil,
+            onNextWindowSwitchPress: {
+                switchPressCount += 1
+            },
+            onNextWindowSwitchRelease: {
+                switchReleaseCount += 1
+            },
+            onAppReload: nil,
+            onLoadSafeRuntimeConfig: nil,
+            onToggleFullscreenOverlay: nil,
+            recordStatusColorProvider: { .off },
+            shiftLatchColorProvider: { .off },
+            onModifierPress: nil,
+            onModifierRelease: nil
+        )
+        let pages = factory.makePages(from: config)
+        let pageController = LaunchpadPageController(invalidationBus: bus)
+        pageController.setPages(pages, initialPageID: config.initialPageID)
+
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 0, y: 4), phase: .press, velocity: 100))
+        pageController.handle(PadEvent(coordinate: PadCoordinate(x: 0, y: 4), phase: .release, velocity: 0))
+        XCTAssertEqual(switchPressCount, 1)
+        XCTAssertEqual(switchReleaseCount, 1)
+    }
+
+    func testAppCycleStateUsesFrozenOrderForSession() {
+        var candidates: [pid_t] = [11, 22, 33]
+        var state = LaunchpadAppCycleState()
+
+        XCTAssertTrue(state.start(with: candidates, currentPID: 22))
+        candidates.append(44)
+
+        XCTAssertEqual(state.step(.forward), 33)
+        XCTAssertEqual(state.step(.forward), 11)
+        XCTAssertEqual(state.step(.forward), 22)
+    }
+
+    func testAppCycleStateSupportsBackwardWraparound() {
+        var state = LaunchpadAppCycleState()
+        XCTAssertTrue(state.start(with: [11, 22, 33], currentPID: 22))
+
+        XCTAssertEqual(state.step(.backward), 11)
+        XCTAssertEqual(state.step(.backward), 33)
+        XCTAssertEqual(state.step(.forward), 11)
+    }
+
+    func testAppCycleStateStopsAndIgnoresFurtherSteps() {
+        var state = LaunchpadAppCycleState()
+        XCTAssertTrue(state.start(with: [11, 22], currentPID: 11))
+        XCTAssertNotNil(state.step(.forward))
+
+        state.stop()
+
+        XCTAssertFalse(state.isActive)
+        XCTAssertEqual(state.candidateCount, 0)
+        XCTAssertNil(state.step(.forward))
     }
 
     func testPageControllerControlLayerSlotAddRemove() {

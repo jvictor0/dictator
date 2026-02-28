@@ -44,6 +44,7 @@ struct LaunchpadActionConfig: Decodable {
         case dictation
         case talonLiteDictation = "talon_lite_dictation"
         case contextualBackspace = "contextual_backspace"
+        case nextWindow = "next_window"
         case appReload = "app_reload"
         case modifierLatch = "modifier_latch"
         case loadSafeRuntimeConfig = "load_safe_runtime_config"
@@ -153,6 +154,8 @@ enum LaunchpadLayoutLoader {
                     }
                 case .contextualBackspace:
                     break
+                case .nextWindow:
+                    break
                 case .appReload:
                     break
                 case .loadSafeRuntimeConfig:
@@ -182,6 +185,8 @@ final class LaunchpadPageFactory {
     private let onDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?
     private let onTalonLiteDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?
     private let onContextualBackspace: (() -> Void)?
+    private let onNextWindowSwitchPress: (() -> Void)?
+    private let onNextWindowSwitchRelease: (() -> Void)?
     private let onAppReload: (() -> Void)?
     private let onLoadSafeRuntimeConfig: (() -> Void)?
     private let onToggleFullscreenOverlay: (() -> Void)?
@@ -196,6 +201,8 @@ final class LaunchpadPageFactory {
         onDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?,
         onTalonLiteDictationCommand: ((LaunchpadActionConfig.DictationCommand) -> Void)?,
         onContextualBackspace: (() -> Void)?,
+        onNextWindowSwitchPress: (() -> Void)?,
+        onNextWindowSwitchRelease: (() -> Void)?,
         onAppReload: (() -> Void)?,
         onLoadSafeRuntimeConfig: (() -> Void)?,
         onToggleFullscreenOverlay: (() -> Void)?,
@@ -209,6 +216,8 @@ final class LaunchpadPageFactory {
         self.onDictationCommand = onDictationCommand
         self.onTalonLiteDictationCommand = onTalonLiteDictationCommand
         self.onContextualBackspace = onContextualBackspace
+        self.onNextWindowSwitchPress = onNextWindowSwitchPress
+        self.onNextWindowSwitchRelease = onNextWindowSwitchRelease
         self.onAppReload = onAppReload
         self.onLoadSafeRuntimeConfig = onLoadSafeRuntimeConfig
         self.onToggleFullscreenOverlay = onToggleFullscreenOverlay
@@ -223,6 +232,8 @@ final class LaunchpadPageFactory {
         let onDictationCommand = self.onDictationCommand
         let onTalonLiteDictationCommand = self.onTalonLiteDictationCommand
         let onContextualBackspace = self.onContextualBackspace
+        let onNextWindowSwitchPress = self.onNextWindowSwitchPress
+        let onNextWindowSwitchRelease = self.onNextWindowSwitchRelease
         let onAppReload = self.onAppReload
         let onLoadSafeRuntimeConfig = self.onLoadSafeRuntimeConfig
         let onToggleFullscreenOverlay = self.onToggleFullscreenOverlay
@@ -271,6 +282,11 @@ final class LaunchpadPageFactory {
                     "launchpad action contextual_backspace page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
                 )
                 onContextualBackspace?()
+            case .nextWindow:
+                TraceLogger.log(
+                    "launchpad action next_window_press page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
+                )
+                onNextWindowSwitchPress?()
             case .appReload:
                 TraceLogger.log(
                     "launchpad action app_reload page=\(pageID) x=\(padConfig.x) y=\(padConfig.y)"
@@ -299,7 +315,7 @@ final class LaunchpadPageFactory {
                 switch padConfig.action.type {
                 case .keystroke, .contextualBackspace:
                     shouldRepeat = true
-                case .dictation, .talonLiteDictation, .appReload, .modifierLatch, .loadSafeRuntimeConfig, .toggleFullscreenOverlay:
+                case .dictation, .talonLiteDictation, .nextWindow, .appReload, .modifierLatch, .loadSafeRuntimeConfig, .toggleFullscreenOverlay:
                     shouldRepeat = false
                 }
                 let cell: LaunchpadCellType
@@ -338,6 +354,14 @@ final class LaunchpadPageFactory {
                         invalidationBus: invalidationBus,
                         onPress: {
                             runAction(padConfig, pageID: pageConfig.id)
+                        },
+                        onRelease: {
+                            if padConfig.action.type == .nextWindow {
+                                TraceLogger.log(
+                                    "launchpad action next_window_release page=\(pageConfig.id) x=\(padConfig.x) y=\(padConfig.y)"
+                                )
+                                onNextWindowSwitchRelease?()
+                            }
                         },
                         onRepeat: shouldRepeat ? {
                             runAction(padConfig, pageID: pageConfig.id)

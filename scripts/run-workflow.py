@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -97,6 +98,90 @@ def read_issue_statuses(work_item_path: Path, slice_id: str) -> list[str]:
         suffix = f" (Slice-ID: {issue_slice_id})" if issue_slice_id else ""
         statuses.append(f"{issue_file.name}: {status}{suffix}")
     return statuses
+
+
+def is_pass_complete(file_path: Path) -> bool:
+    try:
+        if not file_path.exists():
+            return False
+        last_line = file_path.read_text(encoding="utf-8").splitlines()[-1].strip()
+        return last_line == "pass complete"
+    except (OSError, IndexError):
+        return False
+
+
+def reviewer_approved(slice_path: Path) -> bool:
+    reviewer_files = sorted(slice_path.glob("reviewer-pass-*.md"))
+    if not reviewer_files:
+        return False
+    latest = reviewer_files[-1]
+    if not is_pass_complete(latest):
+        return False
+    try:
+        lower = latest.read_text(encoding="utf-8").lower()
+    except OSError:
+        return False
+    if "not approved" in lower:
+        return False
+    return "approved" in lower
+
+
+def slice_done(slice_path: Path) -> bool:
+    tester = slice_path / "tester.md"
+    return is_pass_complete(tester) and reviewer_approved(slice_path)
+
+
+def resolve_open_slice_issues(work_item_path: Path, slice_id: str) -> list[str]:
+    issues_dir = work_item_path / "issues"
+    if not issues_dir.exists():
+        return []
+
+    resolved: list[str] = []
+    for issue_file in sorted(issues_dir.glob("issue-*.md")):
+        try:
+            lines = issue_file.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+
+        status_index = -1
+        status_value = ""
+        issue_slice_id = ""
+        for idx, raw_line in enumerate(lines):
+            normalized = raw_line.strip().lstrip("-").strip()
+            if normalized.lower().startswith("status:"):
+                status_index = idx
+                status_value = normalized.split(":", 1)[1].strip().upper()
+            elif normalized.lower().startswith("slice-id:"):
+                issue_slice_id = normalized.split(":", 1)[1].strip()
+
+        if status_index < 0 or status_value != "OPEN":
+            continue
+        if issue_slice_id and issue_slice_id != slice_id:
+            continue
+
+        original = lines[status_index]
+        updated = re.sub(
+            r"(?i)^(\s*-\s*status\s*:\s*)open(\s*)$",
+            r"\1RESOLVED\2",
+            original,
+        )
+        if updated == original:
+            updated = re.sub(
+                r"(?i)^(\s*status\s*:\s*)open(\s*)$",
+                r"\1RESOLVED\2",
+                original,
+            )
+        if updated == original:
+            continue
+
+        lines[status_index] = updated
+        try:
+            issue_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except OSError:
+            continue
+        resolved.append(issue_file.name)
+
+    return resolved
 
 
 def run_role(
@@ -229,6 +314,7 @@ def main() -> int:
     work_item_path = repo_root / "work-items" / args.work_item
 
     final_exit = 0
+    tester_ran_successfully = False
     for index, role in enumerate(sequence, start=1):
         exit_code, payload, stderr = run_role(
             runner=runner,
@@ -240,11 +326,23 @@ def main() -> int:
         )
 
         print_run_report(index, role, exit_code, payload, stderr, work_item_path, slice_path, args.slice_id)
+        if role == "tester" and exit_code == 0 and payload.get("status") == "success":
+            tester_ran_successfully = True
 
         if exit_code != 0:
             final_exit = exit_code
             if not args.continue_on_error:
                 break
+
+    if final_exit == 0 and tester_ran_successfully and slice_done(slice_path):
+        resolved = resolve_open_slice_issues(work_item_path, args.slice_id)
+        if resolved:
+            print("\nauto_resolved_issues:")
+            for issue_name in resolved:
+                print(f"  - {issue_name}")
+            print("issue_statuses_after_auto_resolve:")
+            for status in read_issue_statuses(work_item_path, args.slice_id):
+                print(f"  - {status}")
 
     return final_exit
 

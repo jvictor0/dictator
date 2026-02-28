@@ -1,7 +1,7 @@
 # Issue 0003: Replace Command+Tab mapping with immediate native next-window switch
 
-- Status: OPEN
-- Slice-ID: map-0-4-to-cmdtab-blue
+- Status: RESOLVED
+- Slice-ID: replace-command-tab-mapping-with-immediate-native-next-window-switch
 - Reported by: mayor
 - Source: user request
 

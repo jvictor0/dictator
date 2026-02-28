@@ -52,7 +52,7 @@
           "x": 0,
           "y": 4,
           "color": { "r": 40, "g": 140, "b": 255 },
-          "action": { "type": "keystroke", "key": "tab", "modifiers": ["command"] }
+          "action": { "type": "next_window" }
         },
         {
           "x": 4,

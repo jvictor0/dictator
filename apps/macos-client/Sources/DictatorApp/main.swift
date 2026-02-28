@@ -22,12 +22,20 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let backspaceKeyCode: UInt16 = 51
+    private static let upArrowKeyCode: UInt16 = 126
+    private static let downArrowKeyCode: UInt16 = 125
+    private static let leftArrowKeyCode: UInt16 = 123
+    private static let rightArrowKeyCode: UInt16 = 124
     private static let cancelDebounceSeconds: TimeInterval = 0.15
+    private static let arrowCycleDebounceSeconds: TimeInterval = 0.03
 
     private var menuBarController: MenuBarController?
     private var capsLockTriggerController: CapsLockTriggerController?
     private var backspaceGlobalMonitor: Any?
     private var backspaceLocalMonitor: Any?
+    private var launchpadArrowGlobalMonitor: Any?
+    private var launchpadArrowLocalMonitor: Any?
+    private var launchpadArrowInterceptionLifecycle = LaunchpadArrowCycleInterceptionLifecycle()
     private let recordingController = RecordingController()
     private let audioRecorder = AudioRecorder()
     private let activeTargetContextProvider = ActiveTargetContextProvider()
@@ -77,6 +85,21 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var launchpadInvalidationBus: RenderInvalidationBus?
     private var launchpadOverlayController: LaunchpadFullscreenOverlayController?
     private var launchpadOverlayTabSlotCoordinator: LaunchpadOverlayTabSlotCoordinator?
+    private var launchpadAppCycleState = LaunchpadAppCycleState()
+    private var lastArrowCycleDispatch: (keyCode: UInt16, timestamp: TimeInterval)?
+    private lazy var launchpadArrowEventTapController = LaunchpadArrowCycleEventTapController(
+        isHoldCycleSessionActive: { [weak self] in
+            guard let self else {
+                return false
+            }
+            return self.launchpadAppCycleState.isActive && self.launchpadArrowInterceptionLifecycle.path == .eventTap
+        },
+        onArrowKeyDown: { [weak self] keyCode, timestamp in
+            DispatchQueue.main.async {
+                self?.handleLaunchpadArrowCycleKeyDown(keyCode: keyCode, timestamp: timestamp, source: "event_tap")
+            }
+        }
+    )
     private var managedOllamaProcess: Process?
     private var isRelaunching = false
     private let dictationStateLock = NSLock()
@@ -151,6 +174,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         disarmBackspaceCancelMonitors()
+        disarmLaunchpadArrowCycleInterception()
         managedOllamaProcess?.terminate()
         managedOllamaProcess = nil
         launchpadRenderWorker?.stop()
@@ -677,6 +701,16 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     await self?.handleLaunchpadContextualBackspace()
                 }
             },
+            onNextWindowSwitchPress: { [weak self] in
+                Task { @MainActor in
+                    self?.handleLaunchpadNextWindowSwitchPress()
+                }
+            },
+            onNextWindowSwitchRelease: { [weak self] in
+                Task { @MainActor in
+                    self?.handleLaunchpadNextWindowSwitchRelease()
+                }
+            },
             onAppReload: { [weak self] in
                 Task { @MainActor in
                     self?.triggerAppReload()
@@ -875,6 +909,277 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
         let modifiers = modifiersForKeyPress(.backspace)
         _ = keyboardInjector.send(.backspace, modifiers: modifiers)
+    }
+
+    @MainActor
+    private func handleLaunchpadNextWindowSwitchPress() {
+        guard let frontmost = NSWorkspace.shared.frontmostApplication else {
+            TraceLogger.log("launchpad next_window no-op: frontmost application unavailable")
+            endLaunchpadAppCycleSession(reason: "frontmost_unavailable")
+            return
+        }
+
+        let frontmostPID = frontmost.processIdentifier
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+        let excludedPIDs: Set<pid_t> = [frontmostPID, selfPID]
+        let frozenCandidatePIDs = frozenNextWindowCandidatePIDs(excluding: excludedPIDs)
+
+        guard !frozenCandidatePIDs.isEmpty else {
+            TraceLogger.log("launchpad next_window no-op: no eligible app candidate")
+            endLaunchpadAppCycleSession(reason: "no_candidates")
+            return
+        }
+
+        var activatedPID: pid_t?
+        for pid in frozenCandidatePIDs {
+            if activateApplicationForNextWindow(pid: pid) {
+                activatedPID = pid
+                let appName = applicationName(pid: pid)
+                TraceLogger.log("launchpad next_window activated app=\(appName) pid=\(pid)")
+                menuBarController?.setLaunchpadStatus("Switched: \(appName)")
+                break
+            }
+            TraceLogger.log("launchpad next_window activation failed pid=\(pid)")
+        }
+
+        guard let activatedPID else {
+            TraceLogger.log("launchpad next_window no-op: activation failed for all candidates")
+            endLaunchpadAppCycleSession(reason: "activation_failed")
+            return
+        }
+
+        guard launchpadAppCycleState.start(with: frozenCandidatePIDs, currentPID: activatedPID) else {
+            TraceLogger.log("launchpad next_window hold session not started: empty snapshot")
+            endLaunchpadAppCycleSession(reason: "session_start_failed")
+            return
+        }
+
+        armLaunchpadArrowCycleInterception()
+        TraceLogger.log(
+            "launchpad next_window hold session started candidates=\(frozenCandidatePIDs.count) currentPID=\(activatedPID)"
+        )
+    }
+
+    @MainActor
+    private func handleLaunchpadNextWindowSwitchRelease() {
+        endLaunchpadAppCycleSession(reason: "pad_release")
+    }
+
+    @MainActor
+    private func endLaunchpadAppCycleSession(reason: String) {
+        disarmLaunchpadArrowCycleInterception()
+        launchpadAppCycleState.stop()
+        lastArrowCycleDispatch = nil
+        TraceLogger.log("launchpad next_window hold session ended reason=\(reason)")
+    }
+
+    @MainActor
+    private func handleLaunchpadArrowCycleKeyDown(keyCode: UInt16, timestamp: TimeInterval, source: String) {
+        guard let direction = directionForArrowKeyCode(keyCode) else {
+            return
+        }
+        guard launchpadAppCycleState.isActive else {
+            return
+        }
+
+        if let lastArrowCycleDispatch,
+           lastArrowCycleDispatch.keyCode == keyCode,
+           (timestamp - lastArrowCycleDispatch.timestamp) <= Self.arrowCycleDebounceSeconds {
+            return
+        }
+        lastArrowCycleDispatch = (keyCode, timestamp)
+
+        let attempts = launchpadAppCycleState.candidateCount
+        guard attempts > 0 else {
+            endLaunchpadAppCycleSession(reason: "empty_active_session")
+            return
+        }
+
+        for _ in 0..<attempts {
+            let runtimeCurrentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            guard let nextPID = launchpadAppCycleState.step(direction, currentPID: runtimeCurrentPID) else {
+                return
+            }
+            if activateApplicationForNextWindow(pid: nextPID) {
+                let appName = applicationName(pid: nextPID)
+                TraceLogger.log(
+                    "launchpad next_window hold cycle source=\(source) direction=\(direction == .forward ? "forward" : "backward") app=\(appName) pid=\(nextPID)"
+                )
+                menuBarController?.setLaunchpadStatus("Switched: \(appName)")
+                return
+            }
+            TraceLogger.log("launchpad next_window hold cycle skipped pid=\(nextPID)")
+        }
+
+        TraceLogger.log("launchpad next_window hold cycle no-op: no activatable app")
+    }
+
+    private func armLaunchpadArrowCycleInterception() {
+        disarmLaunchpadArrowCycleInterception()
+        let eventTapArmed = launchpadArrowEventTapController.arm()
+        launchpadArrowInterceptionLifecycle.arm(eventTapAvailable: eventTapArmed)
+        guard !eventTapArmed else {
+            return
+        }
+
+        TraceLogger.log("launchpad next_window event tap unavailable; using monitor fallback")
+        armLaunchpadArrowCycleMonitors()
+    }
+
+    private func disarmLaunchpadArrowCycleInterception() {
+        disarmLaunchpadArrowCycleMonitors()
+        launchpadArrowEventTapController.disarm()
+        launchpadArrowInterceptionLifecycle.disarm()
+    }
+
+    private func armLaunchpadArrowCycleMonitors() {
+        disarmLaunchpadArrowCycleMonitors()
+        launchpadArrowGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            Task { @MainActor in
+                guard let self else {
+                    return
+                }
+                let shouldHandle = LaunchpadArrowCycleInterceptionRouting.shouldHandleArrowKeyEvent(
+                    source: .globalMonitor,
+                    path: self.launchpadArrowInterceptionLifecycle.path,
+                    isArrowKey: self.directionForArrowKeyCode(event.keyCode) != nil,
+                    isHoldCycleSessionActive: self.launchpadAppCycleState.isActive
+                )
+                guard shouldHandle else {
+                    return
+                }
+                self.handleLaunchpadArrowCycleKeyDown(
+                    keyCode: event.keyCode,
+                    timestamp: event.timestamp,
+                    source: "global"
+                )
+            }
+        }
+        launchpadArrowLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else {
+                return event
+            }
+            let shouldConsume = LaunchpadArrowCycleLocalEventConsumption.shouldConsume(
+                eventType: event.type,
+                isArrowKey: self.directionForArrowKeyCode(event.keyCode) != nil,
+                isHoldCycleSessionActive: self.launchpadAppCycleState.isActive
+            )
+            let shouldHandle = LaunchpadArrowCycleInterceptionRouting.shouldHandleArrowKeyEvent(
+                source: .localMonitor,
+                path: self.launchpadArrowInterceptionLifecycle.path,
+                isArrowKey: self.directionForArrowKeyCode(event.keyCode) != nil,
+                isHoldCycleSessionActive: self.launchpadAppCycleState.isActive
+            )
+            if shouldConsume && shouldHandle {
+                Task { @MainActor in
+                    self.handleLaunchpadArrowCycleKeyDown(
+                        keyCode: event.keyCode,
+                        timestamp: event.timestamp,
+                        source: "local"
+                    )
+                }
+                return nil
+            }
+            return event
+        }
+        TraceLogger.log(
+            "launchpad next_window hold monitors armed (global=\(launchpadArrowGlobalMonitor != nil), local=\(launchpadArrowLocalMonitor != nil))"
+        )
+    }
+
+    private func disarmLaunchpadArrowCycleMonitors() {
+        if let launchpadArrowGlobalMonitor {
+            NSEvent.removeMonitor(launchpadArrowGlobalMonitor)
+            self.launchpadArrowGlobalMonitor = nil
+        }
+        if let launchpadArrowLocalMonitor {
+            NSEvent.removeMonitor(launchpadArrowLocalMonitor)
+            self.launchpadArrowLocalMonitor = nil
+        }
+    }
+
+    private func directionForArrowKeyCode(_ keyCode: UInt16) -> LaunchpadAppCycleDirection? {
+        switch keyCode {
+        case Self.leftArrowKeyCode, Self.upArrowKeyCode:
+            return .backward
+        case Self.rightArrowKeyCode, Self.downArrowKeyCode:
+            return .forward
+        default:
+            return nil
+        }
+    }
+
+    private func frozenNextWindowCandidatePIDs(excluding excludedPIDs: Set<pid_t>) -> [pid_t] {
+        let orderedWindowPIDs = orderedWindowOwnerPIDs(excluding: excludedPIDs)
+        var frozenCandidates: [pid_t] = []
+        var seen = Set<pid_t>()
+
+        for pid in orderedWindowPIDs {
+            guard let app = NSRunningApplication(processIdentifier: pid),
+                  isEligibleNextWindowTarget(app: app, excludedPIDs: excludedPIDs),
+                  !seen.contains(pid) else {
+                continue
+            }
+            seen.insert(pid)
+            frozenCandidates.append(pid)
+        }
+
+        for app in NSWorkspace.shared.runningApplications where isEligibleNextWindowTarget(app: app, excludedPIDs: excludedPIDs) {
+            let pid = app.processIdentifier
+            guard !seen.contains(pid) else {
+                continue
+            }
+            seen.insert(pid)
+            frozenCandidates.append(pid)
+        }
+
+        return frozenCandidates
+    }
+
+    private func isEligibleNextWindowTarget(app: NSRunningApplication, excludedPIDs: Set<pid_t>) -> Bool {
+        let pid = app.processIdentifier
+        return !excludedPIDs.contains(pid) &&
+            app.activationPolicy == .regular &&
+            !app.isHidden &&
+            !app.isTerminated
+    }
+
+    private func activateApplicationForNextWindow(pid: pid_t) -> Bool {
+        guard let app = NSRunningApplication(processIdentifier: pid) else {
+            return false
+        }
+        guard app.activationPolicy == .regular, !app.isHidden, !app.isTerminated else {
+            return false
+        }
+        return app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    }
+
+    private func applicationName(pid: pid_t) -> String {
+        NSRunningApplication(processIdentifier: pid)?.localizedName ?? "<unknown>"
+    }
+
+    private func orderedWindowOwnerPIDs(excluding excludedPIDs: Set<pid_t>) -> [pid_t] {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+
+        var ordered: [pid_t] = []
+        var seen = Set<pid_t>()
+        for window in windows {
+            guard let layer = window[kCGWindowLayer as String] as? Int, layer == 0 else {
+                continue
+            }
+            guard let ownerPID = window[kCGWindowOwnerPID as String] as? NSNumber else {
+                continue
+            }
+            let pid = ownerPID.int32Value
+            guard !excludedPIDs.contains(pid), !seen.contains(pid) else {
+                continue
+            }
+            seen.insert(pid)
+            ordered.append(pid)
+        }
+        return ordered
     }
 
     private func dispatchLaunchpadKeystroke(_ key: KeyboardKey, baseModifiers: Set<KeyboardModifier>) {
