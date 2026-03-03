@@ -1,3 +1,0 @@
-display_name: Architect
-short_description: Define architecture, contracts, and implementation-ready plans.
-default_prompt: Create decision-complete technical plans with explicit interfaces, risks, and acceptance criteria.

@@ -1,3 +1,0 @@
-display_name: Reviewer
-short_description: Find correctness, risk, and contract gaps before merge.
-default_prompt: Perform a risk-first review and report findings by severity with file references.

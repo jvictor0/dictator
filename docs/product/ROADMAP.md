@@ -34,7 +34,7 @@ Deliver Dictator in small vertical slices that are testable end-to-end.
 
 ### Exit artifact
 
-- Demo note in work item proving launch and menubar presence.
+- Demo note proving launch and menubar presence.
 
 ## Slice 2: Caps Lock inserts "hello world"
 
@@ -262,5 +262,4 @@ Deliver Dictator in small vertical slices that are testable end-to-end.
 
 - Scope complete
 - Acceptance criteria met
-- Reviewer approval
-- Tester evidence captured in `/work-items/<work-item-id>/`
+- Test evidence captured in the relevant PR, issue, or notes

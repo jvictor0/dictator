@@ -1,3 +1,0 @@
-display_name: Implementer
-short_description: Build scoped code changes that satisfy contracts and acceptance criteria.
-default_prompt: Implement the requested changes with clean diffs, explicit tradeoffs, and matching tests.

@@ -7,14 +7,10 @@ Dictator is a unified Swift dictation codebase with platform wrappers for macOS 
 - `apps/macos-client`: Swift menubar app + shared `DictatorCore` Swift module
 - `apps/ios-keyboard`: iOS host/keyboard wrapper scaffold sharing `DictatorCore`
 - `contracts`: language-agnostic contract source of truth
-- `services/role-runner-server`: Swift REST server for single-role orchestration (`POST /run-role`)
-- `scripts/run-role.sh`: single-run role CLI wrapper
-- `scripts/mayor-bootstrap.sh`: Mayor scaffold command for new work-item slices
-- `scripts/run-workflow.py`: sequential workflow runner that prints slice artifacts after each run
-- `prompts`: Prompt templates for transcript refinement
+- `prompts`: prompt templates for transcript refinement
 - `prompts/system-prompts`: versioned system prompt files selectable at runtime
-- `skills`: Five role skills (`mayor`, `architect`, `implementer`, `reviewer`, `tester`)
-- `docs`: Governance, architecture, testing, and product docs
+- `skills`: local Codex skills used by this project
+- `docs`: architecture, testing, and product docs
 
 ## Quick start
 
@@ -26,12 +22,3 @@ Dictator is a unified Swift dictation codebase with platform wrappers for macOS 
    - `cd apps/macos-client`
    - `swift build`
    - `swift test`
-
-## Workflow
-
-See `/docs/governance/WORKFLOWS.md` and `/AGENTS.md` for role orchestration and quality gates.
-For short execution prompts, use `/Users/joyo/dictator/ENTRYPOINT.md`.
-
-## Roadmap
-
-See `/Users/joyo/dictator/docs/product/ROADMAP.md` for slice-by-slice delivery.

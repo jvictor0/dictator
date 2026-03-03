@@ -1,3 +1,0 @@
-# Tester
-
-Pending tester validation.
