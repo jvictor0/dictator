@@ -19,8 +19,11 @@ public final class RuntimeConfigRefinementEngine: RefinementEngine {
     }
 
     public func refine(_ request: RefineRequest) async throws -> RefineResponse {
+        let runtimeConfig = await runtimeConfigProvider.currentRuntimeConfig()
         let configuration = await runtimeConfigProvider.currentConfiguration()
-        let systemPrompt = SystemPromptCatalog().resolvePrompt(named: configuration.systemPrompt)
+        let systemPrompt = SystemPromptCatalog(
+            directoryURL: runtimeConfig.resolvedSystemPromptsDirectoryURL()
+        ).resolvePrompt(named: configuration.systemPrompt)
         let router = ProviderRoutingRefinementEngine(
             configuration: configuration,
             ollamaEngine: OllamaRefinementEngine(

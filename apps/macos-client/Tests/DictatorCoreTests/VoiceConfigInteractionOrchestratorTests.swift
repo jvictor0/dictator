@@ -10,12 +10,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
-            defaultStore: nil,
-            environment: [
-                "DICTATOR_LLM_PROVIDER": "ollama",
-                "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
-                "OPENAI_MODEL": "gpt-4.1-mini"
-            ]
+            defaultStore: nil
         )
 
         let orchestrator = VoiceConfigInteractionOrchestrator(
@@ -54,7 +49,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
 
-        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil, environment: [:])
+        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil)
         let before = await provider.currentRuntimeConfig()
 
         let orchestrator = VoiceConfigInteractionOrchestrator(
@@ -83,7 +78,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
 
-        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil, environment: [:])
+        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil)
 
         let orchestrator = VoiceConfigInteractionOrchestrator(
             sttEngine: StubSTTEngine(transcript: "switch model to qwen2.5"),
@@ -107,7 +102,7 @@ final class VoiceConfigInteractionOrchestratorTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
 
-        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil, environment: [:])
+        let provider = RuntimeConfigProvider(store: RuntimeConfigStore(fileURL: fileURL), defaultStore: nil)
         let before = await provider.currentRuntimeConfig()
 
         let orchestrator = VoiceConfigInteractionOrchestrator(

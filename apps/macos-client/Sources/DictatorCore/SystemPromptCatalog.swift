@@ -32,16 +32,9 @@ public struct SystemPromptCatalog {
     }
 
     public static func defaultDirectoryURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
         fileManager: FileManager = .default
     ) -> URL {
-        if let override = environment["DICTATOR_SYSTEM_PROMPTS_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty
-        {
-            return URL(fileURLWithPath: override, isDirectory: true)
-        }
-
         let cwd = URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)
         let direct = cwd.appendingPathComponent("prompts/system-prompts", isDirectory: true)
         if fileManager.fileExists(atPath: direct.path) {

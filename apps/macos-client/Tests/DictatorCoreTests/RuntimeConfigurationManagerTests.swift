@@ -14,8 +14,7 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: tempDir.appendingPathComponent("runtime-config.json")),
-            defaultStore: nil,
-            environment: [:]
+            defaultStore: nil
         )
         let session = makeSession()
         RuntimeConfigurationURLProtocolStub.handler = { request in
@@ -60,8 +59,7 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
-            defaultStore: nil,
-            environment: [:]
+            defaultStore: nil
         )
 
         _ = try await provider.applyInMemoryPatch(
@@ -109,8 +107,7 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: tempDir.appendingPathComponent("runtime-config.json")),
-            defaultStore: nil,
-            environment: [:]
+            defaultStore: nil
         )
 
         let manager = RuntimeConfigurationManager(
@@ -139,8 +136,7 @@ final class RuntimeConfigurationManagerTests: XCTestCase {
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: tempDir.appendingPathComponent("runtime-config.json")),
-            defaultStore: nil,
-            environment: [:]
+            defaultStore: nil
         )
 
         let manager = RuntimeConfigurationManager(

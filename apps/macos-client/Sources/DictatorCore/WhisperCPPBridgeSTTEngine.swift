@@ -13,18 +13,13 @@ public struct WhisperCPPBridgeSTTEngine: STTEngine {
             self.modelPath = modelPath
             self.language = language
         }
-
-        public static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) -> Configuration {
-            let model = env["DICTATOR_WHISPER_MODEL"] ?? "models/ggml-base.en.bin"
-            return Configuration(modelPath: model, language: "en")
-        }
     }
 
     private let configuration: Configuration
     private let runtime: any WhisperRuntime
 
     public init(
-        configuration: Configuration = .fromEnvironment(),
+        configuration: Configuration = .init(modelPath: RuntimeConfigFile.defaultSTTModelPath, language: RuntimeConfigFile.defaultSTTLanguage),
         runtime: (any WhisperRuntime)? = nil
     ) {
         self.configuration = configuration

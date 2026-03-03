@@ -44,17 +44,30 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             self?.handleKeyboardDispatchResult(result)
         }
     }
-    private let sttEngine = WhisperCPPBridgeSTTEngine()
-    private let secretStore = KeychainSecretStore()
-    private lazy var runtimeConfigProvider: RuntimeConfigProvider = RuntimeConfigProvider(
-        store: RuntimeConfigStore(
-            fileURL: RuntimeConfigStore.defaultFileURL(environment: ProcessInfo.processInfo.environment)
-        ),
-        environment: ProcessInfo.processInfo.environment
+    private lazy var runtimeConfigStore: RuntimeConfigStore = RuntimeConfigStore(
+        fileURL: RuntimeConfigStore.defaultFileURL()
     )
     private lazy var safeRuntimeConfigStore: RuntimeConfigStore = RuntimeConfigStore(
-        fileURL: RuntimeConfigStore.defaultSafeFileURL(environment: ProcessInfo.processInfo.environment)
+        fileURL: RuntimeConfigStore.defaultSafeFileURL()
     )
+    private lazy var secretsFileStore: SecretsStore = SecretsStore()
+    private let inMemorySecretStore = InMemorySecretStore()
+    private lazy var secretStore: any SecretStore = inMemorySecretStore
+    private lazy var runtimeConfigProvider: RuntimeConfigProvider = RuntimeConfigProvider(
+        store: runtimeConfigStore,
+        defaultStore: safeRuntimeConfigStore
+    )
+    private lazy var sttEngine: WhisperCPPBridgeSTTEngine = {
+        let startupConfig = try? runtimeConfigStore.load()
+        let fallbackConfig = try? safeRuntimeConfigStore.load()
+        let resolved = startupConfig ?? fallbackConfig ?? RuntimeConfigFile.bootstrap()
+        return WhisperCPPBridgeSTTEngine(
+            configuration: .init(
+                modelPath: resolved.resolvedSTTModelPath(),
+                language: resolved.sttLanguage
+            )
+        )
+    }()
     private lazy var coreClient: any DictatorCoreClient = PipelineOrchestrator(
         sttEngine: sttEngine,
         refinementEngine: makeRefinementEngine()
@@ -113,19 +126,17 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var interactionStore: InteractionHistoryStore?
     private var interactionStoreSetupTask: Task<Void, Never>?
     private var interactionsOverlayTab: LaunchpadInteractionsOverlayTab?
+    private var secretsLoadError: String?
 
     override init() {
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let dotenvValues = DotEnvLoader.loadIntoProcessEnvironment()
         TraceLogger.reset()
         TraceLogger.log("app did finish launching")
         TraceLogger.log("trace file: \(TraceLogger.path)")
-        if !dotenvValues.isEmpty {
-            TraceLogger.log("dotenv loaded keys=\(dotenvValues.keys.sorted().joined(separator: ","))")
-        }
+        bootstrapSecretsInMemory()
 
         let menuBarController = MenuBarController()
         menuBarController.onSetAPIKey = { [weak self] in
@@ -135,7 +146,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             self?.clearAPIKey(menuBarController: menuBarController)
         }
         self.menuBarController = menuBarController
-        bootstrapOllamaIfNeeded()
+        Task { @MainActor in
+            await self.bootstrapOllamaIfNeeded()
+        }
 
         let triggerController = CapsLockTriggerController { [weak menuBarController, weak self] in
             guard let self else {
@@ -443,10 +456,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hasOpenAIKey() -> Bool {
-        if APIKeyResolver.environmentValue() != nil {
-            return true
+        do {
+            return try inMemorySecretStore.getOpenAIKey() != nil
+        } catch {
+            TraceLogger.log("in-memory secret read failed: \(error)")
+            return false
         }
-        return secretStore.hasOpenAIKeyWithoutPrompt()
     }
 
     private func makeRefinementEngine() -> any RefinementEngine {
@@ -464,10 +479,13 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         let configuration = await runtimeConfigProvider.currentConfiguration()
         switch configuration.provider {
         case .openai:
+            if let secretsLoadError {
+                return "Ready: secrets file error (\(secretsLoadError)) [OpenAI]"
+            }
             if hasOpenAIKey() {
                 return "\(base) [OpenAI]"
             }
-            return "Ready: Set OpenAI key from menu or .env [OpenAI]"
+            return "Ready: Configure OpenAI key via Config/secrets.json or in-memory menu [OpenAI]"
         case .ollama:
             if configuration.fallback == .openai {
                 if hasOpenAIKey() {
@@ -482,7 +500,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private func promptForAPIKey(menuBarController: MenuBarController) {
         let alert = NSAlert()
         alert.messageText = "Set OpenAI API Key (Fallback)"
-        alert.informativeText = "Paste your API key. It will be stored in your macOS Keychain and used for optional fallback."
+        alert.informativeText = "Paste your API key. It will be stored in memory for this app session only."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
 
@@ -502,8 +520,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            try secretStore.setOpenAIKey(key)
-            menuBarController.setState("Saved OpenAI fallback key")
+            try inMemorySecretStore.setOpenAIKey(key)
+            menuBarController.setState("Saved OpenAI key in memory (session only)")
         } catch {
             menuBarController.setState("Failed: Could not save OpenAI key")
         }
@@ -511,10 +529,24 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
     private func clearAPIKey(menuBarController: MenuBarController) {
         do {
-            try secretStore.clearOpenAIKey()
-            menuBarController.setState("Cleared OpenAI fallback key")
+            try inMemorySecretStore.clearOpenAIKey()
+            menuBarController.setState("Cleared in-memory OpenAI key")
         } catch {
             menuBarController.setState("Failed: Could not clear OpenAI key")
+        }
+    }
+
+    private func bootstrapSecretsInMemory() {
+        do {
+            if let key = try secretsFileStore.getOpenAIKey() {
+                try inMemorySecretStore.setOpenAIKey(key)
+                TraceLogger.log("loaded OpenAI key from secrets.json into memory")
+            } else {
+                TraceLogger.log("no OpenAI key found in secrets.json")
+            }
+        } catch {
+            secretsLoadError = String(describing: error)
+            TraceLogger.log("failed to load secrets file: \(error)")
         }
     }
 
@@ -548,7 +580,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         if let dictatorError = error as? DictatorError {
             switch dictatorError {
             case .missingApiKey:
-                return "Missing OpenAI key (set from menu or .env)"
+                return "Missing OpenAI key (set from menu or Config/secrets.json)"
             case .invalidApiKey:
                 return "Invalid OpenAI key"
             case .networkUnavailable:
@@ -625,8 +657,14 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let systemPromptsTab = LaunchpadSystemPromptsOverlayTab(
-            listDirectoryEntries: { relativeDirectory in
-                let promptCatalog = SystemPromptCatalog()
+            listDirectoryEntries: { [weak self] relativeDirectory in
+                guard let self else {
+                    throw DictatorError.configInteractionUnavailable
+                }
+                let runtimeConfig = await self.runtimeConfigProvider.currentRuntimeConfig()
+                let promptCatalog = SystemPromptCatalog(
+                    directoryURL: runtimeConfig.resolvedSystemPromptsDirectoryURL()
+                )
                 return try promptCatalog
                     .listEntries(in: relativeDirectory)
                     .map { entry in
@@ -637,8 +675,14 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                         )
                     }
             },
-            loadPromptBody: { relativePath in
-                try SystemPromptCatalog().loadPrompt(named: relativePath)
+            loadPromptBody: { [weak self] relativePath in
+                guard let self else {
+                    throw DictatorError.configInteractionUnavailable
+                }
+                let runtimeConfig = await self.runtimeConfigProvider.currentRuntimeConfig()
+                return try SystemPromptCatalog(
+                    directoryURL: runtimeConfig.resolvedSystemPromptsDirectoryURL()
+                ).loadPrompt(named: relativePath)
             },
             getSelectedPromptPath: { [weak self] in
                 guard let self else {
@@ -846,8 +890,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         TraceLogger.log("launchpad overlay tab selected index=\(index)")
     }
 
-    private func bootstrapOllamaIfNeeded() {
-        let configuration = LLMRuntimeConfiguration.fromEnvironment()
+    @MainActor
+    private func bootstrapOllamaIfNeeded() async {
+        let configuration = await runtimeConfigProvider.currentConfiguration()
         switch OllamaBootstrapper.ensureRunningIfNeeded(configuration: configuration) {
         case .notRequired:
             TraceLogger.log("ollama bootstrap skipped (provider=\(configuration.provider.rawValue), host=\(configuration.ollamaHost))")
@@ -1240,6 +1285,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         }
         let currentConfig = await runtimeConfigProvider.currentRuntimeConfig()
         let configuration = await runtimeConfigProvider.currentConfiguration()
+        let promptCatalog = SystemPromptCatalog(
+            directoryURL: currentConfig.resolvedSystemPromptsDirectoryURL()
+        )
 
         let manager = RuntimeConfigurationManager(
             configurations: [
@@ -1271,7 +1319,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                     name: "System Prompt",
                     currentValue: currentConfig.systemPrompt,
                     defaultValue: defaultConfig.systemPrompt,
-                    runtimeConfigProvider: runtimeConfigProvider
+                    runtimeConfigProvider: runtimeConfigProvider,
+                    promptCatalog: promptCatalog
                 ),
                 RuntimeInteractionsBufferConfiguration(
                     name: "Interactions Buffer",
@@ -1361,7 +1410,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             let currentConfig = await runtimeConfigProvider.currentRuntimeConfig()
             interactionBuffer.setMaxBytes(currentConfig.interactionsBufferBytes)
             let dataDirectoryURL = InteractionDataPathResolver.defaultDataDirectory(
-                environment: ProcessInfo.processInfo.environment
+                runtimeConfig: currentConfig
             )
             let store = InteractionHistoryStore(
                 buffer: interactionBuffer,
@@ -1427,7 +1476,9 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             finalOutput: response.revised_text,
             mode: mode,
             systemPromptPath: runtimeConfig.systemPrompt,
-            systemPromptBody: SystemPromptCatalog().resolvePrompt(named: runtimeConfig.systemPrompt),
+            systemPromptBody: SystemPromptCatalog(
+                directoryURL: runtimeConfig.resolvedSystemPromptsDirectoryURL()
+            ).resolvePrompt(named: runtimeConfig.systemPrompt),
             model: effectiveModel,
             provider: effectiveProvider,
             optionalContext: optionalContext ?? [:],

@@ -1,37 +1,30 @@
 import Foundation
 
 public enum APIKeyResolver {
-    private static let environmentKeyOrder = [
-        "DICTATOR_OPENAI_API_KEY",
-        "OPENAI_API_KEY"
-    ]
-
     public static func resolve(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
         fallback: () throws -> String?
     ) rethrows -> String? {
-        if let envKey = environmentValue(environment), !envKey.isEmpty {
-            return envKey
-        }
-
-        guard let fallbackKey = try fallback() else {
+        guard let key = try fallback() else {
             return nil
         }
-        let normalized = fallbackKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? nil : normalized
+        return normalized(key)
     }
 
-    public static func environmentValue(
-        _ environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> String? {
-        for key in environmentKeyOrder {
-            guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty
-            else {
-                continue
-            }
-            return value
+    public static func resolve(
+        primary: () throws -> String?,
+        fallback: () throws -> String?
+    ) rethrows -> String? {
+        if let first = try primary(), let normalizedFirst = normalized(first) {
+            return normalizedFirst
         }
-        return nil
+        guard let second = try fallback() else {
+            return nil
+        }
+        return normalized(second)
+    }
+
+    private static func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

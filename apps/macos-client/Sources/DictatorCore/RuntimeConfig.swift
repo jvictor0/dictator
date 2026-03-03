@@ -2,6 +2,15 @@ import Foundation
 
 public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public static let defaultInteractionsBufferBytes: Int = 100 * 1024 * 1024
+    public static let defaultOllamaHost = "http://127.0.0.1:11434"
+    public static let defaultCloudModel = "gpt-4.1-mini"
+    public static let defaultLocalModel = "qwen2.5:7b-instruct"
+    public static let defaultFallbackMode = "openai"
+    public static let defaultSTTModelPath = "models/ggml-base.en.bin"
+    public static let defaultSTTLanguage = "en"
+    public static let defaultOllamaBinPath = "/opt/homebrew/bin/ollama"
+    public static let defaultDataDir = "apps/macos-client/Data"
+    public static let defaultSystemPromptsDir = "prompts/system-prompts"
 
     public let version: Int
     public let cloudModel: String
@@ -9,6 +18,13 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public let systemPrompt: String
     public let interactionsBufferBytes: Int
     public let useCloud: Bool
+    public let fallbackMode: String
+    public let ollamaHost: String
+    public let sttModelPath: String
+    public let sttLanguage: String
+    public let ollamaBinPath: String
+    public let dataDir: String
+    public let systemPromptsDir: String
     public let updatedAt: String
 
     public var model: String {
@@ -22,6 +38,13 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         systemPrompt: String = SystemPromptCatalog.defaultPromptFile,
         interactionsBufferBytes: Int = Self.defaultInteractionsBufferBytes,
         useCloud: Bool,
+        fallbackMode: String = Self.defaultFallbackMode,
+        ollamaHost: String = Self.defaultOllamaHost,
+        sttModelPath: String = Self.defaultSTTModelPath,
+        sttLanguage: String = Self.defaultSTTLanguage,
+        ollamaBinPath: String = Self.defaultOllamaBinPath,
+        dataDir: String = Self.defaultDataDir,
+        systemPromptsDir: String = Self.defaultSystemPromptsDir,
         updatedAt: String
     ) {
         self.version = version
@@ -30,6 +53,13 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         self.systemPrompt = systemPrompt
         self.interactionsBufferBytes = interactionsBufferBytes
         self.useCloud = useCloud
+        self.fallbackMode = fallbackMode
+        self.ollamaHost = Self.trimTrailingSlash(ollamaHost)
+        self.sttModelPath = sttModelPath
+        self.sttLanguage = sttLanguage
+        self.ollamaBinPath = ollamaBinPath
+        self.dataDir = dataDir
+        self.systemPromptsDir = systemPromptsDir
         self.updatedAt = updatedAt
     }
 
@@ -51,6 +81,13 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         case systemPrompt = "system_prompt"
         case interactionsBufferBytes = "interactions_buffer_bytes"
         case useCloud = "use_cloud"
+        case fallbackMode = "fallback_mode"
+        case ollamaHost = "ollama_host"
+        case sttModelPath = "stt_model_path"
+        case sttLanguage = "stt_language"
+        case ollamaBinPath = "ollama_bin_path"
+        case dataDir = "data_dir"
+        case systemPromptsDir = "system_prompts_dir"
         case updatedAt = "updated_at"
     }
 
@@ -65,12 +102,26 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         let localModel = try container.decodeIfPresent(String.self, forKey: .localModel)
         let systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
         let interactionsBufferBytes = try container.decodeIfPresent(Int.self, forKey: .interactionsBufferBytes)
+        let fallbackMode = try container.decodeIfPresent(String.self, forKey: .fallbackMode)
+        let ollamaHost = try container.decodeIfPresent(String.self, forKey: .ollamaHost)
+        let sttModelPath = try container.decodeIfPresent(String.self, forKey: .sttModelPath)
+        let sttLanguage = try container.decodeIfPresent(String.self, forKey: .sttLanguage)
+        let ollamaBinPath = try container.decodeIfPresent(String.self, forKey: .ollamaBinPath)
+        let dataDir = try container.decodeIfPresent(String.self, forKey: .dataDir)
+        let systemPromptsDir = try container.decodeIfPresent(String.self, forKey: .systemPromptsDir)
         let legacyModel = try container.decodeIfPresent(String.self, forKey: .model)
 
-        let resolvedCloudModel = cloudModel ?? legacyModel ?? "gpt-4.1-mini"
-        let resolvedLocalModel = localModel ?? legacyModel ?? "qwen2.5:7b-instruct"
+        let resolvedCloudModel = cloudModel ?? legacyModel ?? Self.defaultCloudModel
+        let resolvedLocalModel = localModel ?? legacyModel ?? Self.defaultLocalModel
         let resolvedSystemPrompt = systemPrompt ?? SystemPromptCatalog.defaultPromptFile
         let resolvedInteractionsBufferBytes = interactionsBufferBytes ?? Self.defaultInteractionsBufferBytes
+        let resolvedFallbackMode = Self.normalizedNonEmpty(fallbackMode) ?? Self.defaultFallbackMode
+        let resolvedOllamaHost = Self.normalizedNonEmpty(ollamaHost) ?? Self.defaultOllamaHost
+        let resolvedSTTModelPath = Self.normalizedNonEmpty(sttModelPath) ?? Self.defaultSTTModelPath
+        let resolvedSTTLanguage = Self.normalizedNonEmpty(sttLanguage) ?? Self.defaultSTTLanguage
+        let resolvedOllamaBinPath = Self.normalizedNonEmpty(ollamaBinPath) ?? Self.defaultOllamaBinPath
+        let resolvedDataDir = Self.normalizedNonEmpty(dataDir) ?? Self.defaultDataDir
+        let resolvedSystemPromptsDir = Self.normalizedNonEmpty(systemPromptsDir) ?? Self.defaultSystemPromptsDir
 
         self.init(
             version: version,
@@ -79,6 +130,13 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
             systemPrompt: resolvedSystemPrompt,
             interactionsBufferBytes: resolvedInteractionsBufferBytes,
             useCloud: useCloud,
+            fallbackMode: resolvedFallbackMode,
+            ollamaHost: resolvedOllamaHost,
+            sttModelPath: resolvedSTTModelPath,
+            sttLanguage: resolvedSTTLanguage,
+            ollamaBinPath: resolvedOllamaBinPath,
+            dataDir: resolvedDataDir,
+            systemPromptsDir: resolvedSystemPromptsDir,
             updatedAt: updatedAt
         )
     }
@@ -91,24 +149,115 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         try container.encode(systemPrompt, forKey: .systemPrompt)
         try container.encode(interactionsBufferBytes, forKey: .interactionsBufferBytes)
         try container.encode(useCloud, forKey: .useCloud)
+        try container.encode(fallbackMode, forKey: .fallbackMode)
+        try container.encode(ollamaHost, forKey: .ollamaHost)
+        try container.encode(sttModelPath, forKey: .sttModelPath)
+        try container.encode(sttLanguage, forKey: .sttLanguage)
+        try container.encode(ollamaBinPath, forKey: .ollamaBinPath)
+        try container.encode(dataDir, forKey: .dataDir)
+        try container.encode(systemPromptsDir, forKey: .systemPromptsDir)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
-    static func bootstrap(from configuration: LLMRuntimeConfiguration, now: Date = Date()) -> RuntimeConfigFile {
+    public static func bootstrap(now: Date = Date()) -> RuntimeConfigFile {
         RuntimeConfigFile(
             version: 2,
-            cloudModel: configuration.openAIModel,
-            localModel: configuration.ollamaModel,
-            systemPrompt: configuration.systemPrompt,
-            useCloud: configuration.provider == .openai,
+            cloudModel: Self.defaultCloudModel,
+            localModel: Self.defaultLocalModel,
+            systemPrompt: SystemPromptCatalog.defaultPromptFile,
+            useCloud: false,
             updatedAt: Self.timestamp(from: now)
         )
+    }
+
+    public func resolvedDataDirectoryURL(
+        currentDirectoryPath: String = FileManager.default.currentDirectoryPath
+    ) -> URL {
+        Self.resolvePathURL(dataDir, currentDirectoryPath: currentDirectoryPath, isDirectory: true)
+    }
+
+    public func resolvedSystemPromptsDirectoryURL(
+        currentDirectoryPath: String = FileManager.default.currentDirectoryPath
+    ) -> URL {
+        Self.resolvePathURL(systemPromptsDir, currentDirectoryPath: currentDirectoryPath, isDirectory: true)
+    }
+
+    public func resolvedSTTModelPath(
+        currentDirectoryPath: String = FileManager.default.currentDirectoryPath
+    ) -> String {
+        Self.resolvePathURL(sttModelPath, currentDirectoryPath: currentDirectoryPath, isDirectory: false).path
     }
 
     static func timestamp(from date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: date)
+    }
+
+    private static func normalizedNonEmpty(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private static func trimTrailingSlash(_ value: String) -> String {
+        var result = value
+        while result.count > 1, result.hasSuffix("/") {
+            result.removeLast()
+        }
+        return result
+    }
+
+    private static func resolvePathURL(_ value: String, currentDirectoryPath: String, isDirectory: Bool) -> URL {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("/") {
+            return URL(fileURLWithPath: trimmed, isDirectory: isDirectory)
+        }
+
+        let cwdURL = URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)
+        let cwdCandidate = cwdURL.appendingPathComponent(trimmed, isDirectory: isDirectory)
+        let repoRoot = repoRootURL(startingAt: cwdURL)
+        let repoCandidate = repoRoot?.appendingPathComponent(trimmed, isDirectory: isDirectory)
+
+        if shouldPreferRepoRoot(forRelativePath: trimmed), let repoCandidate {
+            return repoCandidate
+        }
+
+        let fm = FileManager.default
+        if fm.fileExists(atPath: cwdCandidate.path) {
+            return cwdCandidate
+        }
+        if let repoCandidate, fm.fileExists(atPath: repoCandidate.path) {
+            return repoCandidate
+        }
+
+        return cwdCandidate
+    }
+
+    private static func shouldPreferRepoRoot(forRelativePath relativePath: String) -> Bool {
+        relativePath.hasPrefix("apps/")
+            || relativePath.hasPrefix("prompts/")
+            || relativePath.hasPrefix("contracts/")
+            || relativePath.hasPrefix("skills/")
+    }
+
+    private static func repoRootURL(startingAt url: URL, maxDepth: Int = 8) -> URL? {
+        let fm = FileManager.default
+        var current = url.standardizedFileURL
+        for _ in 0..<maxDepth {
+            let gitPath = current.appendingPathComponent(".git", isDirectory: true).path
+            if fm.fileExists(atPath: gitPath) {
+                return current
+            }
+
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path {
+                break
+            }
+            current = parent
+        }
+        return nil
     }
 }
 
@@ -151,15 +300,9 @@ public struct RuntimeConfigStore {
     }
 
     public static func defaultFileURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
         fileManager: FileManager = .default
     ) -> URL {
-        if let override = environment["DICTATOR_RUNTIME_CONFIG_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty {
-            return URL(fileURLWithPath: override)
-        }
-
         let cwd = URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)
         let direct = cwd.appendingPathComponent("Config/runtime-config.json")
         if fileManager.fileExists(atPath: direct.deletingLastPathComponent().path) {
@@ -175,15 +318,9 @@ public struct RuntimeConfigStore {
     }
 
     public static func defaultSafeFileURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath,
         fileManager: FileManager = .default
     ) -> URL {
-        if let override = environment["DICTATOR_RUNTIME_CONFIG_SAFE_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty {
-            return URL(fileURLWithPath: override)
-        }
-
         let cwd = URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)
         let direct = cwd.appendingPathComponent("Config/runtime-config.safe")
         if fileManager.fileExists(atPath: direct.deletingLastPathComponent().path) {
@@ -228,21 +365,17 @@ public struct RuntimeConfigStore {
 
 public actor RuntimeConfigProvider {
     private let store: RuntimeConfigStore
-    private let environment: [String: String]
     private let defaultConfig: RuntimeConfigFile
     private var runtimeConfig: RuntimeConfigFile
 
     public init(
         store: RuntimeConfigStore = RuntimeConfigStore(fileURL: RuntimeConfigStore.defaultFileURL()),
-        defaultStore: RuntimeConfigStore? = RuntimeConfigStore(fileURL: RuntimeConfigStore.defaultSafeFileURL()),
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        defaultStore: RuntimeConfigStore? = RuntimeConfigStore(fileURL: RuntimeConfigStore.defaultSafeFileURL())
     ) {
         self.store = store
-        self.environment = environment
 
-        let baseConfiguration = LLMRuntimeConfiguration.fromEnvironment(environment)
         let defaultFromSafe = try? defaultStore?.load()
-        let startupDefault = defaultFromSafe ?? RuntimeConfigFile.bootstrap(from: baseConfiguration)
+        let startupDefault = defaultFromSafe ?? RuntimeConfigFile.bootstrap()
         self.defaultConfig = startupDefault
 
         let loaded = try? store.load()
@@ -258,7 +391,7 @@ public actor RuntimeConfigProvider {
     }
 
     public func currentConfiguration() -> LLMRuntimeConfiguration {
-        LLMRuntimeConfiguration.fromEnvironment(environment, runtimeOverride: runtimeConfig)
+        LLMRuntimeConfiguration.fromRuntimeConfig(runtimeConfig)
     }
 
     public func startupDefaultConfig() -> RuntimeConfigFile {
@@ -321,6 +454,13 @@ public actor RuntimeConfigProvider {
             systemPrompt: resolvedSystemPrompt,
             interactionsBufferBytes: resolvedInteractionsBufferBytes,
             useCloud: resolvedUseCloud,
+            fallbackMode: runtimeConfig.fallbackMode,
+            ollamaHost: runtimeConfig.ollamaHost,
+            sttModelPath: runtimeConfig.sttModelPath,
+            sttLanguage: runtimeConfig.sttLanguage,
+            ollamaBinPath: runtimeConfig.ollamaBinPath,
+            dataDir: runtimeConfig.dataDir,
+            systemPromptsDir: runtimeConfig.systemPromptsDir,
             updatedAt: RuntimeConfigFile.timestamp(from: now)
         )
         return next

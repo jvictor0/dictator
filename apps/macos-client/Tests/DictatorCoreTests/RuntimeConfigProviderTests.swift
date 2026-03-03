@@ -3,7 +3,7 @@ import XCTest
 @testable import DictatorCore
 
 final class RuntimeConfigProviderTests: XCTestCase {
-    func testRuntimeConfigOverridesEnvironment() async throws {
+    func testRuntimeConfigDrivesEffectiveConfiguration() async throws {
         let tempDir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
@@ -13,24 +13,23 @@ final class RuntimeConfigProviderTests: XCTestCase {
             cloudModel: "gpt-4.1",
             localModel: "qwen2.5:7b-instruct",
             useCloud: true,
+            fallbackMode: "none",
+            ollamaHost: "http://localhost:11434/",
             updatedAt: "2026-02-23T00:00:00Z"
         )
         try RuntimeConfigStore(fileURL: fileURL).save(seed)
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
-            defaultStore: nil,
-            environment: [
-                "DICTATOR_LLM_PROVIDER": "ollama",
-                "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
-                "OPENAI_MODEL": "gpt-4.1-mini"
-            ]
+            defaultStore: nil
         )
 
         let config = await provider.currentConfiguration()
         XCTAssertEqual(config.provider, .openai)
         XCTAssertEqual(config.openAIModel, "gpt-4.1")
         XCTAssertEqual(config.ollamaModel, "qwen2.5:7b-instruct")
+        XCTAssertEqual(config.fallback, .none)
+        XCTAssertEqual(config.ollamaHost, "http://localhost:11434")
     }
 
     func testApplyPatchPersistsAndImmediatelyAffectsEffectiveConfig() async throws {
@@ -40,12 +39,7 @@ final class RuntimeConfigProviderTests: XCTestCase {
         let fileURL = tempDir.appendingPathComponent("runtime-config.json")
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: fileURL),
-            defaultStore: nil,
-            environment: [
-                "DICTATOR_LLM_PROVIDER": "ollama",
-                "DICTATOR_OLLAMA_MODEL": "qwen2.5:7b-instruct",
-                "OPENAI_MODEL": "gpt-4.1-mini"
-            ]
+            defaultStore: nil
         )
 
         _ = try await provider.applyPatch(RuntimeConfigPatch(model: "gpt-4.1-mini", useCloud: true))
@@ -86,7 +80,7 @@ final class RuntimeConfigProviderTests: XCTestCase {
         try primaryStore.save(primary)
         try safeStore.save(safe)
 
-        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil, environment: [:])
+        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil)
         let loaded = try await provider.loadFromStoreIntoMemory(safeStore)
         XCTAssertEqual(loaded, safe)
 
@@ -115,11 +109,7 @@ final class RuntimeConfigProviderTests: XCTestCase {
 
         let provider = RuntimeConfigProvider(
             store: RuntimeConfigStore(fileURL: primaryURL),
-            defaultStore: RuntimeConfigStore(fileURL: safeURL),
-            environment: [
-                "DICTATOR_LLM_PROVIDER": "openai",
-                "OPENAI_MODEL": "gpt-4.1-mini"
-            ]
+            defaultStore: RuntimeConfigStore(fileURL: safeURL)
         )
 
         let startupDefault = await provider.startupDefaultConfig()
@@ -144,7 +134,7 @@ final class RuntimeConfigProviderTests: XCTestCase {
         let primaryStore = RuntimeConfigStore(fileURL: primaryURL)
         try primaryStore.save(primary)
 
-        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil, environment: [:])
+        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil)
         let updated = try await provider.applyInMemoryPatch(RuntimeConfigPatch(model: "qwen2.5:7b-instruct", useCloud: false))
         XCTAssertEqual(updated.model, "qwen2.5:7b-instruct")
         XCTAssertFalse(updated.useCloud)
@@ -173,6 +163,8 @@ final class RuntimeConfigProviderTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(RuntimeConfigFile.self, from: json)
         XCTAssertEqual(decoded.interactionsBufferBytes, RuntimeConfigFile.defaultInteractionsBufferBytes)
+        XCTAssertEqual(decoded.ollamaHost, RuntimeConfigFile.defaultOllamaHost)
+        XCTAssertEqual(decoded.sttModelPath, RuntimeConfigFile.defaultSTTModelPath)
     }
 
     func testApplyInMemoryPatchUpdatesInteractionsBufferBytes() async throws {
@@ -181,13 +173,48 @@ final class RuntimeConfigProviderTests: XCTestCase {
 
         let primaryURL = tempDir.appendingPathComponent("runtime-config.json")
         let primaryStore = RuntimeConfigStore(fileURL: primaryURL)
-        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil, environment: [:])
+        let provider = RuntimeConfigProvider(store: primaryStore, defaultStore: nil)
 
         let updated = try await provider.applyInMemoryPatch(
             RuntimeConfigPatch(interactionsBufferBytes: 25 * 1024 * 1024)
         )
 
         XCTAssertEqual(updated.interactionsBufferBytes, 25 * 1024 * 1024)
+    }
+
+    func testResolvedSystemPromptsDirectoryUsesRepoRootWhenCurrentDirectoryIsNested() {
+        let runtime = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4.1-mini",
+            localModel: "qwen2.5:7b-instruct",
+            systemPrompt: "intent_refiner_v1.md",
+            useCloud: false,
+            systemPromptsDir: "prompts/system-prompts",
+            updatedAt: "2026-03-03T00:00:00Z"
+        )
+
+        let resolved = runtime.resolvedSystemPromptsDirectoryURL(
+            currentDirectoryPath: "/Users/joyo/dictator/apps/macos-client"
+        )
+
+        XCTAssertEqual(resolved.path, "/Users/joyo/dictator/prompts/system-prompts")
+    }
+
+    func testResolvedDataDirectoryUsesRepoRootForAppsPrefixedPath() {
+        let runtime = RuntimeConfigFile(
+            version: 2,
+            cloudModel: "gpt-4.1-mini",
+            localModel: "qwen2.5:7b-instruct",
+            useCloud: false,
+            dataDir: "apps/macos-client/Data",
+            updatedAt: "2026-03-03T00:00:00Z"
+        )
+
+        let resolved = runtime.resolvedDataDirectoryURL(
+            currentDirectoryPath: "/Users/joyo/dictator/apps/macos-client"
+        )
+
+        XCTAssertEqual(resolved.path, "/Users/joyo/dictator/apps/macos-client/Data")
     }
 
     private func makeTempDir() throws -> URL {

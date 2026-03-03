@@ -114,17 +114,10 @@ final class DictationInteractionBuffer {
 
 enum InteractionDataPathResolver {
     static func defaultDataDirectory(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
+        runtimeConfig: RuntimeConfigFile,
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath
     ) -> URL {
-        if let override = environment["DICTATOR_DATA_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty
-        {
-            return URL(fileURLWithPath: override, isDirectory: true)
-        }
-
-        let cwd = URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)
-        return cwd.appendingPathComponent("Data", isDirectory: true)
+        runtimeConfig.resolvedDataDirectoryURL(currentDirectoryPath: currentDirectoryPath)
     }
 }
 

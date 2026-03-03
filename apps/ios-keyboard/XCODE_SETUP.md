@@ -40,7 +40,6 @@ Ensure target membership:
 
 Update placeholders in both entitlements files:
 
-- `$(AppIdentifierPrefix)com.joyo.dictator.shared`
 - `group.com.joyo.dictator`
 
 ## 5) Signing + capabilities
@@ -53,7 +52,6 @@ For both targets:
    - Extension: `com.joyo.dictator.keyboard`
 3. Capabilities:
    - App Groups: `group.com.joyo.dictator`
-   - Keychain Sharing: `$(AppIdentifierPrefix)com.joyo.dictator.shared`
 
 ## 6) Build settings for shared core
 
@@ -69,11 +67,10 @@ For initial deployment scaffold, this step can be deferred.
    - Settings > General > Keyboard > Keyboards > Add New Keyboard...
    - Choose `DictatorKeyboardExtension`
    - Enable `Allow Full Access`
-5. Open host app to paste API key and verify diagnostics.
+5. Open host app and verify diagnostics.
 
 ## 8) Smoke test
 
-1. In host app, set API key.
-2. Open Notes and switch to your custom keyboard.
-3. Confirm keyboard status updates and text insertion path.
-4. Confirm failure messages are explicit if key/network/runtime is unavailable.
+1. Open Notes and switch to your custom keyboard.
+2. Confirm keyboard status updates and text insertion path.
+3. Confirm failure messages are explicit if network/runtime is unavailable.

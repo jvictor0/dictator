@@ -2,39 +2,40 @@ import XCTest
 @testable import DictatorCore
 
 final class APIKeyResolverTests: XCTestCase {
-    func testResolvePrefersDictatorEnvKey() {
+    func testResolveNormalizesFallbackValue() {
         let key = APIKeyResolver.resolve(
-            environment: [
-                "DICTATOR_OPENAI_API_KEY": "dictator-key",
-                "OPENAI_API_KEY": "openai-key"
-            ],
+            fallback: { "  primary-secret  " }
+        )
+
+        XCTAssertEqual(key, "primary-secret")
+    }
+
+    func testResolveReturnsNilWhenFallbackEmpty() {
+        let key = APIKeyResolver.resolve(
+            fallback: { "   " }
+        )
+
+        XCTAssertNil(key)
+    }
+
+    func testResolveUsesFallbackWhenPrimaryMissing() {
+        let key = APIKeyResolver.resolve(
+            primary: { nil },
+            fallback: { "secrets-file-key" }
+        )
+
+        XCTAssertEqual(key, "secrets-file-key")
+    }
+
+    func testResolvePrefersPrimaryWhenPresent() {
+        let key = APIKeyResolver.resolve(
+            primary: { "primary-secret" },
             fallback: {
-                XCTFail("Fallback should not run when env key is present")
+                XCTFail("Fallback should not run when primary key is present")
                 return nil
             }
         )
 
-        XCTAssertEqual(key, "dictator-key")
-    }
-
-    func testResolveUsesOpenAIEnvKeyWhenDictatorMissing() {
-        let key = APIKeyResolver.resolve(
-            environment: ["OPENAI_API_KEY": "openai-key"],
-            fallback: {
-                XCTFail("Fallback should not run when env key is present")
-                return nil
-            }
-        )
-
-        XCTAssertEqual(key, "openai-key")
-    }
-
-    func testResolveFallsBackWhenEnvironmentMissing() {
-        let key = APIKeyResolver.resolve(
-            environment: [:],
-            fallback: { "keychain-key" }
-        )
-
-        XCTAssertEqual(key, "keychain-key")
+        XCTAssertEqual(key, "primary-secret")
     }
 }

@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct HostAppRootView: View {
-    @StateObject private var viewModel = SettingsViewModel()
-
     var body: some View {
         NavigationStack {
             Form {
@@ -11,21 +9,13 @@ struct HostAppRootView: View {
                     Text("2. Enable Allow Full Access for network refinement.")
                 }
 
-                Section("OpenAI Key") {
-                    SecureField("sk-...", text: $viewModel.apiKeyInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    HStack {
-                        Button("Save", action: viewModel.save)
-                        Button("Clear", role: .destructive, action: viewModel.clear)
-                    }
-                    Text(viewModel.statusMessage)
+                Section("Status") {
+                    Text("This template stores no secrets and has no API key entry.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Dictator Keyboard")
-            .onAppear(perform: viewModel.refresh)
         }
     }
 }

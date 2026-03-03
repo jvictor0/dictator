@@ -20,6 +20,7 @@ DerivedData/
 .env
 .env.local
 .env~
+apps/macos-client/Config/secrets.json
 
 # Editors
 .vscode/

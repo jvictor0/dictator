@@ -339,7 +339,7 @@ private final class LaunchpadSystemPromptsOverlayView: NSView, NSTableViewDataSo
         selectedIndex: Int?,
         currentPromptPath: String
     ) {
-        directoryLabel.stringValue = "Directory: /\(directory)"
+        directoryLabel.stringValue = directory.isEmpty ? "Directory: (root)" : "Directory: \(directory)"
         selectorRows = entries.map { row in
             let indent = String(repeating: "  ", count: row.depth)
             let marker: String

@@ -74,8 +74,6 @@
 			membershipExceptions = (
 				DictatorKeyboardHostApp.swift,
 				HostAppRootView.swift,
-				SettingsViewModel.swift,
-				SharedKeychainSecretStore.swift,
 			);
 			target = AFB267252F4AA19600C3C72A /* DictatorKeyboardHost */;
 		};
@@ -84,8 +82,6 @@
 			membershipExceptions = (
 				DictatorKeyboardHostApp.swift,
 				HostAppRootView.swift,
-				SettingsViewModel.swift,
-				SharedKeychainSecretStore.swift,
 			);
 			target = AFB267532F4AA22800C3C72A /* DictatorKeyboardExtension */;
 		};

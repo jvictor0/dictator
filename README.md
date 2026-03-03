@@ -14,11 +14,18 @@ Dictator is a unified Swift dictation codebase with platform wrappers for macOS 
 
 ## Quick start
 
-1. Copy `.env.example` to `.env` and set keys.
-   - Local refinement defaults to Ollama (`qwen2.5:7b-instruct`); OpenAI key is optional fallback.
-   - Runtime mutable LLM config is persisted in `apps/macos-client/Config/runtime-config.json` and overrides `.env` for model/cloud mode and selected system prompt path.
+1. Configure runtime files (no environment variables):
+   - Environment variables are never used for runtime configuration in this repo.
+   - All non-secret settings live in `apps/macos-client/Config/runtime-config.json`.
+   - Safe defaults live in `apps/macos-client/Config/runtime-config.safe`.
+   - Secrets live in `apps/macos-client/Config/secrets.json` (local, gitignored). Use `apps/macos-client/Config/secrets.example.json` as the template.
    - System prompt versions live under `prompts/system-prompts/`; `system_prompt` is a path relative to that directory.
 2. Build/test macOS app + shared core:
    - `cd apps/macos-client`
    - `swift build`
    - `swift test`
+
+## Compatibility
+
+- There are no stable installs for this project.
+- We do not optimize for backward compatibility in general; configuration and behavior may change between revisions.

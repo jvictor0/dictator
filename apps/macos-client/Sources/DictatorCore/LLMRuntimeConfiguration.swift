@@ -17,6 +17,7 @@ public struct LLMRuntimeConfiguration: Sendable {
     public let fallback: Fallback
     public let openAIModel: String
     public let systemPrompt: String
+    public let ollamaBinPath: String
 
     public init(
         provider: Provider,
@@ -24,74 +25,34 @@ public struct LLMRuntimeConfiguration: Sendable {
         ollamaModel: String,
         fallback: Fallback,
         openAIModel: String,
-        systemPrompt: String = SystemPromptCatalog.defaultPromptFile
+        systemPrompt: String = SystemPromptCatalog.defaultPromptFile,
+        ollamaBinPath: String = RuntimeConfigFile.defaultOllamaBinPath
     ) {
         self.provider = provider
-        self.ollamaHost = ollamaHost
+        self.ollamaHost = Self.trimTrailingSlash(ollamaHost)
         self.ollamaModel = ollamaModel
         self.fallback = fallback
         self.openAIModel = openAIModel
         self.systemPrompt = systemPrompt
+        self.ollamaBinPath = ollamaBinPath
     }
 
-    public static func fromEnvironment(
-        _ env: [String: String] = ProcessInfo.processInfo.environment,
-        runtimeOverride: RuntimeConfigFile? = nil
-    ) -> LLMRuntimeConfiguration {
-        let provider = Provider(rawValue: normalized(env["DICTATOR_LLM_PROVIDER"])) ?? .ollama
-        let fallback = Fallback(rawValue: normalized(env["DICTATOR_LLM_FALLBACK"])) ?? .openai
-        let ollamaHost = normalizedNonEmpty(env["DICTATOR_OLLAMA_HOST"]) ?? "http://127.0.0.1:11434"
-        let ollamaModel = normalizedNonEmpty(env["DICTATOR_OLLAMA_MODEL"]) ?? "qwen2.5:7b-instruct"
-        let openAIModel = normalizedNonEmpty(env["OPENAI_MODEL"]) ?? "gpt-4.1-mini"
-        let systemPrompt = normalizedNonEmpty(env["DICTATOR_SYSTEM_PROMPT"]) ?? SystemPromptCatalog.defaultPromptFile
-
-        var resolved = LLMRuntimeConfiguration(
-            provider: provider,
-            ollamaHost: trimTrailingSlash(ollamaHost),
-            ollamaModel: ollamaModel,
-            fallback: fallback,
-            openAIModel: openAIModel,
-            systemPrompt: systemPrompt
+    public static func fromRuntimeConfig(_ runtimeConfig: RuntimeConfigFile) -> LLMRuntimeConfiguration {
+        LLMRuntimeConfiguration(
+            provider: runtimeConfig.useCloud ? .openai : .ollama,
+            ollamaHost: runtimeConfig.ollamaHost,
+            ollamaModel: runtimeConfig.localModel,
+            fallback: Fallback(rawValue: normalized(runtimeConfig.fallbackMode)) ?? .openai,
+            openAIModel: runtimeConfig.cloudModel,
+            systemPrompt: runtimeConfig.systemPrompt,
+            ollamaBinPath: runtimeConfig.ollamaBinPath
         )
-
-        guard let runtimeOverride else {
-            return resolved
-        }
-
-        if runtimeOverride.useCloud {
-            resolved = LLMRuntimeConfiguration(
-                provider: .openai,
-                ollamaHost: resolved.ollamaHost,
-                ollamaModel: runtimeOverride.localModel,
-                fallback: resolved.fallback,
-                openAIModel: runtimeOverride.cloudModel,
-                systemPrompt: runtimeOverride.systemPrompt
-            )
-        } else {
-            resolved = LLMRuntimeConfiguration(
-                provider: .ollama,
-                ollamaHost: resolved.ollamaHost,
-                ollamaModel: runtimeOverride.localModel,
-                fallback: resolved.fallback,
-                openAIModel: runtimeOverride.cloudModel,
-                systemPrompt: runtimeOverride.systemPrompt
-            )
-        }
-
-        return resolved
     }
 
     private static func normalized(_ value: String?) -> String {
         value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
-    }
-
-    private static func normalizedNonEmpty(_ value: String?) -> String? {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-            return nil
-        }
-        return value
     }
 
     private static func trimTrailingSlash(_ value: String) -> String {

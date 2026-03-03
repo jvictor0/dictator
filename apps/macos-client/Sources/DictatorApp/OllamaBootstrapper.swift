@@ -22,7 +22,7 @@ enum OllamaBootstrapper {
         }
 
         do {
-            let process = try startServeProcess()
+            let process = try startServeProcess(configuration: configuration)
             return .started(process: process)
         } catch {
             return .startFailed(String(describing: error))
@@ -64,17 +64,15 @@ enum OllamaBootstrapper {
         return reachable
     }
 
-    private static func startServeProcess() throws -> Process {
-        let environment = ProcessInfo.processInfo.environment
-        let configuredBinary = environment["DICTATOR_OLLAMA_BIN"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func startServeProcess(configuration: LLMRuntimeConfiguration) throws -> Process {
+        let configuredBinary = configuration.ollamaBinPath.trimmingCharacters(in: .whitespacesAndNewlines)
         let process = Process()
-        if let configuredBinary, !configuredBinary.isEmpty {
+        if !configuredBinary.isEmpty {
             process.executableURL = URL(fileURLWithPath: configuredBinary)
             process.arguments = ["serve"]
         } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["ollama", "serve"]
+            process.executableURL = URL(fileURLWithPath: RuntimeConfigFile.defaultOllamaBinPath)
+            process.arguments = ["serve"]
         }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
