@@ -1,0 +1,48 @@
+{
+  "" : {
+    "diagnostics" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHost-master.dia",
+    "emit-module-dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHost-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHost-master-emit-module.dia",
+    "swift-dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHost-master.swiftdeps"
+  },
+  "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/HostApp/DictatorKeyboardHostApp.swift" : {
+    "const-values" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.swiftconstvalues",
+    "dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.d",
+    "diagnostics" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.dia",
+    "index-unit-output-path" : "/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.o",
+    "llvm-bc" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.bc",
+    "object" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.o",
+    "swift-dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp.swiftdeps",
+    "swiftmodule" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/DictatorKeyboardHostApp~partial.swiftmodule"
+  },
+  "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/HostApp/HostAppRootView.swift" : {
+    "const-values" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.swiftconstvalues",
+    "dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.d",
+    "diagnostics" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.dia",
+    "index-unit-output-path" : "/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.o",
+    "llvm-bc" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.bc",
+    "object" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.o",
+    "swift-dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView.swiftdeps",
+    "swiftmodule" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/HostAppRootView~partial.swiftmodule"
+  },
+  "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/GeneratedAssetSymbols~partial.swiftmodule"
+  },
+  "/Users/joyo/dictator/apps/ios-keyboard/Shared/SharedConfig.swift" : {
+    "const-values" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.swiftconstvalues",
+    "dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.d",
+    "diagnostics" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.dia",
+    "index-unit-output-path" : "/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.o",
+    "llvm-bc" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.bc",
+    "object" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.o",
+    "swift-dependencies" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig.swiftdeps",
+    "swiftmodule" : "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/build/DictatorKeyboardHost.build/Debug-iphonesimulator/DictatorKeyboardHost.build/Objects-normal/x86_64/SharedConfig~partial.swiftmodule"
+  }
+}

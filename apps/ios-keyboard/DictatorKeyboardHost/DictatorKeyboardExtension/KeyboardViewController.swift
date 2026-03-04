@@ -9,6 +9,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private let nextKeyboardButton = UIButton(type: .system)
     private let insertTranscriptButton = UIButton(type: .system)
+    private let openHostAppButton = UIButton(type: .system)
     private let statusLabel = UILabel()
     private var state: InsertState = .idle {
         didSet {
@@ -20,11 +21,6 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
         setupUI()
         state = SharedConfig.loadLatestTranscript() == nil ? .noTranscript : .idle
-    }
-
-    override func viewWillLayoutSubviews() {
-        super.viewWillLayoutSubviews()
-        nextKeyboardButton.isHidden = !needsInputModeSwitchKey
     }
 
     @objc
@@ -42,6 +38,34 @@ final class KeyboardViewController: UIInputViewController {
 
         textDocumentProxy.insertText(trimmed)
         state = .inserted
+    }
+
+    @objc
+    private func handleOpenHostAppTap() {
+        guard let url = URL(string: SharedConfig.hostAppLaunchURLString) else {
+            statusLabel.text = "Host app URL is invalid."
+            SharedConfig.appendDiagnosticsLine("[Keyboard] Invalid host app URL: \(SharedConfig.hostAppLaunchURLString)")
+            return
+        }
+
+        statusLabel.text = "Opening host app..."
+        SharedConfig.appendDiagnosticsLine("[Keyboard] Attempting extensionContext.open(\(url.absoluteString))")
+
+        extensionContext?.open(url) { [weak self] success in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+
+                SharedConfig.appendDiagnosticsLine("[Keyboard] extensionContext.open success=\(success)")
+                if success {
+                    self.statusLabel.text = "Opening host app..."
+                    return
+                }
+                self.statusLabel.text = "Unable to open host app."
+                SharedConfig.appendDiagnosticsLine("[Keyboard] Host app open failed via extensionContext.")
+            }
+        }
     }
 
     private func setupUI() {
@@ -66,9 +90,20 @@ final class KeyboardViewController: UIInputViewController {
         insertTranscriptButton.layer.borderColor = UIColor.systemGray3.cgColor
         insertTranscriptButton.addTarget(self, action: #selector(handleInsertTranscriptTap), for: .touchUpInside)
 
+        openHostAppButton.translatesAutoresizingMaskIntoConstraints = false
+        openHostAppButton.setTitle("Open Dictator App", for: .normal)
+        openHostAppButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        openHostAppButton.layer.cornerRadius = 14
+        openHostAppButton.layer.borderWidth = 1
+        openHostAppButton.layer.borderColor = UIColor.systemBlue.cgColor
+        openHostAppButton.backgroundColor = .systemBlue.withAlphaComponent(0.12)
+        openHostAppButton.setTitleColor(.systemBlue, for: .normal)
+        openHostAppButton.addTarget(self, action: #selector(handleOpenHostAppTap), for: .touchUpInside)
+
         view.addSubview(nextKeyboardButton)
         view.addSubview(statusLabel)
         view.addSubview(insertTranscriptButton)
+        view.addSubview(openHostAppButton)
 
         NSLayoutConstraint.activate([
             nextKeyboardButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
@@ -82,7 +117,12 @@ final class KeyboardViewController: UIInputViewController {
             insertTranscriptButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             insertTranscriptButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             insertTranscriptButton.heightAnchor.constraint(equalToConstant: 68),
-            insertTranscriptButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
+            
+            openHostAppButton.topAnchor.constraint(equalTo: insertTranscriptButton.bottomAnchor, constant: 8),
+            openHostAppButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            openHostAppButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            openHostAppButton.heightAnchor.constraint(equalToConstant: 52),
+            openHostAppButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
         ])
     }
 

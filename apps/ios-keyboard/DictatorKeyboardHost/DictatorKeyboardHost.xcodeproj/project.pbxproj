@@ -549,6 +549,10 @@
 				DEVELOPMENT_TEAM = 84DCGNY7JA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HostInfo.plist;
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleTypeRole = Editor;
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLName = com.joyo.dictator.host;
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLSchemes_0 = dictatorkeyboardhost;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Dictator connects to your local Dictator server to transcribe recordings.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dictator records short audio snippets for dictation.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -581,6 +585,10 @@
 				DEVELOPMENT_TEAM = 84DCGNY7JA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HostInfo.plist;
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleTypeRole = Editor;
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLName = com.joyo.dictator.host;
+				INFOPLIST_KEY_CFBundleURLTypes_0_CFBundleURLSchemes_0 = dictatorkeyboardhost;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Dictator connects to your local Dictator server to transcribe recordings.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dictator records short audio snippets for dictation.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -684,8 +692,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DictatorKeyboardExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DictatorKeyboardExtension;
-				INFOPLIST_KEY_ios_client_host_url = "http://192.168.1.12:8787";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_ios_client_host_url = "http://192.168.1.12:8787";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -711,8 +719,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DictatorKeyboardExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DictatorKeyboardExtension;
-				INFOPLIST_KEY_ios_client_host_url = "http://192.168.1.12:8787";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_ios_client_host_url = "http://192.168.1.12:8787";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

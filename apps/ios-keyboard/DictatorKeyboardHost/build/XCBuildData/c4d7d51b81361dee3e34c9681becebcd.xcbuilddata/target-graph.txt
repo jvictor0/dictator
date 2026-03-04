@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'DictatorKeyboardHost' in project 'DictatorKeyboardHost'
+➜ Explicit dependency on target 'DictatorKeyboardExtension' in project 'DictatorKeyboardHost'
+Target 'DictatorKeyboardExtension' in project 'DictatorKeyboardHost' (no dependencies)

@@ -1,0 +1,184 @@
+{
+  "source": "/Users/joyo/dictator/apps/ios-keyboard/DictatorKeyboardHost/HostApp/HostAppRootView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Dictator Keyboard",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 139
+        }
+      },
+      {
+        "comment": "",
+        "key": "Dictation",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 50
+        }
+      },
+      {
+        "comment": "",
+        "key": "Keyboard Setup",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 78
+        }
+      },
+      {
+        "comment": "",
+        "key": "Status",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 85
+        }
+      },
+      {
+        "comment": "",
+        "key": "Diagnostics",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 99
+        }
+      },
+      {
+        "comment": "",
+        "key": "No transcript has been saved yet.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 72
+        }
+      },
+      {
+        "comment": "",
+        "key": "Latest transcript:",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 60
+        }
+      },
+      {
+        "comment": "",
+        "key": "Saved: %@",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 67
+        }
+      },
+      {
+        "comment": "",
+        "key": "1. Enable Dictator keyboard in Settings > General > Keyboard.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 79
+        }
+      },
+      {
+        "comment": "",
+        "key": "2. Switch to the Dictator keyboard in any text field.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 80
+        }
+      },
+      {
+        "comment": "",
+        "key": "3. Tap Insert Latest Transcript in the keyboard to paste shared dictation text.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 81
+        }
+      },
+      {
+        "comment": "",
+        "key": "4. Tap Open Dictator App in the keyboard to launch this host app.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 82
+        }
+      },
+      {
+        "comment": "",
+        "key": "Server URL: %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 86
+        }
+      },
+      {
+        "comment": "",
+        "key": "Transcripts are saved to the app group for the keyboard extension.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 94
+        }
+      },
+      {
+        "comment": "",
+        "key": "http://host:8787",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 87
+        }
+      },
+      {
+        "comment": "",
+        "key": "Save Server URL",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 90
+        }
+      },
+      {
+        "comment": "",
+        "key": "Log file: %@",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 121
+        }
+      },
+      {
+        "comment": "",
+        "key": "No trace events yet.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 127
+        }
+      },
+      {
+        "comment": "",
+        "key": "Refresh Trace",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 100
+        }
+      },
+      {
+        "comment": "",
+        "key": "Run Connectivity Probe",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 104
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy Trace",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 111
+        }
+      },
+      {
+        "comment": "",
+        "key": "Clear Trace",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 115
+        }
+      }
+    ]
+  },
+  "version": 1
+}

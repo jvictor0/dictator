@@ -35,6 +35,7 @@ struct HostAppRootView: View {
     @State private var diagnostics: [String] = []
     @State private var serverURLDraft: String = ""
     @State private var isRunningProbe = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private let recorder = AudioSnippetRecorder()
     private let sessionID = UUID().uuidString
@@ -78,6 +79,7 @@ struct HostAppRootView: View {
                     Text("1. Enable Dictator keyboard in Settings > General > Keyboard.")
                     Text("2. Switch to the Dictator keyboard in any text field.")
                     Text("3. Tap Insert Latest Transcript in the keyboard to paste shared dictation text.")
+                    Text("4. Tap Open Dictator App in the keyboard to launch this host app.")
                 }
 
                 Section("Status") {
@@ -95,6 +97,10 @@ struct HostAppRootView: View {
                 }
 
                 Section("Diagnostics") {
+                    Button("Refresh Trace") {
+                        refreshDiagnosticsFromDisk()
+                    }
+
                     Button("Run Connectivity Probe") {
                         Task {
                             await runConnectivityProbe()
@@ -135,13 +141,15 @@ struct HostAppRootView: View {
         .task {
             refreshLatestTranscript()
             serverURLDraft = configuredServerURL
-            if let persisted = SharedConfig.readDiagnosticsLog() {
-                let lines = persisted
-                    .split(separator: "\n", omittingEmptySubsequences: true)
-                    .map(String.init)
-                if !lines.isEmpty {
-                    diagnostics = Array(lines.suffix(100))
-                }
+            refreshDiagnosticsFromDisk()
+        }
+        .onOpenURL { url in
+            refreshDiagnosticsFromDisk()
+            addTrace("App opened via URL: \(url.absoluteString)")
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                refreshDiagnosticsFromDisk()
             }
         }
     }
@@ -400,6 +408,16 @@ struct HostAppRootView: View {
         let full = "[\(timestamp)] \(line)"
         diagnostics.append(full)
         SharedConfig.appendDiagnosticsLine(full)
+    }
+
+    private func refreshDiagnosticsFromDisk() {
+        guard let persisted = SharedConfig.readDiagnosticsLog() else {
+            return
+        }
+        let lines = persisted
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map(String.init)
+        diagnostics = Array(lines.suffix(100))
     }
 
     private func traceString(for error: Error) -> String {

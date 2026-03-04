@@ -7,6 +7,8 @@ enum SharedConfig {
     static let latestTranscriptKey = "latest_transcript"
     static let latestTranscriptUpdatedAtKey = "latest_transcript_updated_at"
     static let diagnosticsFilename = "host_diagnostics.log"
+    static let hostAppURLScheme = "dictatorkeyboardhost"
+    static let hostAppLaunchURLString = "\(hostAppURLScheme)://open"
 
     static func resolvedServerURLString(bundle: Bundle = .main) -> String {
         if let sharedDefaults = UserDefaults(suiteName: appGroupIdentifier),
@@ -107,4 +109,5 @@ enum SharedConfig {
         }
         try? FileManager.default.removeItem(at: url)
     }
+
 }
