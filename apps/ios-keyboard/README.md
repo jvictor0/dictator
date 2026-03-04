@@ -1,24 +1,24 @@
-# iOS Keyboard Wrapper Scaffold
+# iOS Keyboard App
 
-This folder contains direct-device deployment scaffolding for iOS host + keyboard extension.
+Canonical iOS implementation lives in:
 
-- `HostApp/`: onboarding, keyboard enablement guidance, diagnostics template.
-- `KeyboardExtension/`: keyboard extension shell + placeholder pipeline controller.
-- `Shared/`: cross-target constants for app-group identifiers.
-- `XCODE_SETUP.md`: exact Xcode checklist for target creation/signing/on-device install.
+- `apps/ios-keyboard/DictatorKeyboardHost/HostApp`: host diagnostics and setup guidance.
+- `apps/ios-keyboard/DictatorKeyboardHost/DictatorKeyboardExtension`: custom keyboard with mic capture and LAN dictation call.
+- `apps/ios-keyboard/DictatorKeyboardHost/DictatorKeyboardHost.xcodeproj`: active Xcode project.
 
-## Runtime model (target)
+## Runtime model
 
-- STT: on-device (target architecture is `whisper.cpp` bridge into Swift).
-- Refinement: LAN-based pipeline (no API key handling in iOS app/keyboard template).
-- Failure policy: refinement failures block insertion and show explicit keyboard error.
+- Keyboard records 16 kHz mono PCM audio and uploads it to the Dictator macOS app over LAN.
+- Dictation endpoint: `POST /v1/dictate-audio` (`audio/wav` payload + metadata headers).
+- Keyboard inserts `revised_text` returned by the server.
 
-## Required entitlements (implementation target)
+## Known Roadblock
 
-- Keyboard extension Open Access enabled (`RequestsOpenAccess = YES`) for network refinement.
-- Shared app group for extension/host communication.
+- On-device microphone capture from the custom keyboard extension is currently blocked in this architecture by iOS extension/runtime constraints.
+- Current status: networking + server integration + insertion flow are implemented; extension mic-capture path is paused for later redesign.
+- Candidate fallback paths: host-app-managed recording flow, or relying on system dictation path.
 
-## Current status
+## Configuration
 
-This scaffold is ready for Xcode target wiring in-place within this repo.
-No TestFlight setup is required for direct deployment to your personal iPhone.
+- Host URL is read from `ios_client_host_url` in the host/extension `Info.plist`.
+- Keyboard extension requires Full Access (`RequestsOpenAccess = YES`) for network requests.

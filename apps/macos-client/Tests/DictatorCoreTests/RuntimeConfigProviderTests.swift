@@ -165,6 +165,30 @@ final class RuntimeConfigProviderTests: XCTestCase {
         XCTAssertEqual(decoded.interactionsBufferBytes, RuntimeConfigFile.defaultInteractionsBufferBytes)
         XCTAssertEqual(decoded.ollamaHost, RuntimeConfigFile.defaultOllamaHost)
         XCTAssertEqual(decoded.sttModelPath, RuntimeConfigFile.defaultSTTModelPath)
+        XCTAssertEqual(decoded.dictatorServerHost, RuntimeConfigFile.defaultDictatorServerHost)
+        XCTAssertEqual(decoded.dictatorServerPort, RuntimeConfigFile.defaultDictatorServerPort)
+        XCTAssertEqual(decoded.dictatorServerEnabled, RuntimeConfigFile.defaultDictatorServerEnabled)
+    }
+
+    func testRuntimeConfigDecodesDictatorServerOverrides() throws {
+        let json = """
+        {
+          "version": 2,
+          "cloud_model": "gpt-4.1-mini",
+          "local_model": "qwen2.5:7b-instruct",
+          "system_prompt": "intent_refiner_v1.md",
+          "use_cloud": false,
+          "dictator_server_host": "127.0.0.1",
+          "dictator_server_port": 9999,
+          "dictator_server_enabled": false,
+          "updated_at": "2026-02-24T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(RuntimeConfigFile.self, from: json)
+        XCTAssertEqual(decoded.dictatorServerHost, "127.0.0.1")
+        XCTAssertEqual(decoded.dictatorServerPort, 9999)
+        XCTAssertFalse(decoded.dictatorServerEnabled)
     }
 
     func testApplyInMemoryPatchUpdatesInteractionsBufferBytes() async throws {

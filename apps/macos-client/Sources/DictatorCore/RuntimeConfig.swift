@@ -11,6 +11,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public static let defaultOllamaBinPath = "/opt/homebrew/bin/ollama"
     public static let defaultDataDir = "apps/macos-client/Data"
     public static let defaultSystemPromptsDir = "prompts/system-prompts"
+    public static let defaultDictatorServerHost = "0.0.0.0"
+    public static let defaultDictatorServerPort = 8787
+    public static let defaultDictatorServerEnabled = true
 
     public let version: Int
     public let cloudModel: String
@@ -25,6 +28,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public let ollamaBinPath: String
     public let dataDir: String
     public let systemPromptsDir: String
+    public let dictatorServerHost: String
+    public let dictatorServerPort: Int
+    public let dictatorServerEnabled: Bool
     public let updatedAt: String
 
     public var model: String {
@@ -45,6 +51,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         ollamaBinPath: String = Self.defaultOllamaBinPath,
         dataDir: String = Self.defaultDataDir,
         systemPromptsDir: String = Self.defaultSystemPromptsDir,
+        dictatorServerHost: String = Self.defaultDictatorServerHost,
+        dictatorServerPort: Int = Self.defaultDictatorServerPort,
+        dictatorServerEnabled: Bool = Self.defaultDictatorServerEnabled,
         updatedAt: String
     ) {
         self.version = version
@@ -60,6 +69,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         self.ollamaBinPath = ollamaBinPath
         self.dataDir = dataDir
         self.systemPromptsDir = systemPromptsDir
+        self.dictatorServerHost = dictatorServerHost
+        self.dictatorServerPort = dictatorServerPort
+        self.dictatorServerEnabled = dictatorServerEnabled
         self.updatedAt = updatedAt
     }
 
@@ -88,6 +100,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         case ollamaBinPath = "ollama_bin_path"
         case dataDir = "data_dir"
         case systemPromptsDir = "system_prompts_dir"
+        case dictatorServerHost = "dictator_server_host"
+        case dictatorServerPort = "dictator_server_port"
+        case dictatorServerEnabled = "dictator_server_enabled"
         case updatedAt = "updated_at"
     }
 
@@ -109,6 +124,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         let ollamaBinPath = try container.decodeIfPresent(String.self, forKey: .ollamaBinPath)
         let dataDir = try container.decodeIfPresent(String.self, forKey: .dataDir)
         let systemPromptsDir = try container.decodeIfPresent(String.self, forKey: .systemPromptsDir)
+        let dictatorServerHost = try container.decodeIfPresent(String.self, forKey: .dictatorServerHost)
+        let dictatorServerPort = try container.decodeIfPresent(Int.self, forKey: .dictatorServerPort)
+        let dictatorServerEnabled = try container.decodeIfPresent(Bool.self, forKey: .dictatorServerEnabled)
         let legacyModel = try container.decodeIfPresent(String.self, forKey: .model)
 
         let resolvedCloudModel = cloudModel ?? legacyModel ?? Self.defaultCloudModel
@@ -122,6 +140,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         let resolvedOllamaBinPath = Self.normalizedNonEmpty(ollamaBinPath) ?? Self.defaultOllamaBinPath
         let resolvedDataDir = Self.normalizedNonEmpty(dataDir) ?? Self.defaultDataDir
         let resolvedSystemPromptsDir = Self.normalizedNonEmpty(systemPromptsDir) ?? Self.defaultSystemPromptsDir
+        let resolvedDictatorServerHost = Self.normalizedNonEmpty(dictatorServerHost) ?? Self.defaultDictatorServerHost
+        let resolvedDictatorServerPort = dictatorServerPort ?? Self.defaultDictatorServerPort
+        let resolvedDictatorServerEnabled = dictatorServerEnabled ?? Self.defaultDictatorServerEnabled
 
         self.init(
             version: version,
@@ -137,6 +158,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
             ollamaBinPath: resolvedOllamaBinPath,
             dataDir: resolvedDataDir,
             systemPromptsDir: resolvedSystemPromptsDir,
+            dictatorServerHost: resolvedDictatorServerHost,
+            dictatorServerPort: resolvedDictatorServerPort,
+            dictatorServerEnabled: resolvedDictatorServerEnabled,
             updatedAt: updatedAt
         )
     }
@@ -156,6 +180,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         try container.encode(ollamaBinPath, forKey: .ollamaBinPath)
         try container.encode(dataDir, forKey: .dataDir)
         try container.encode(systemPromptsDir, forKey: .systemPromptsDir)
+        try container.encode(dictatorServerHost, forKey: .dictatorServerHost)
+        try container.encode(dictatorServerPort, forKey: .dictatorServerPort)
+        try container.encode(dictatorServerEnabled, forKey: .dictatorServerEnabled)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
@@ -166,6 +193,9 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
             localModel: Self.defaultLocalModel,
             systemPrompt: SystemPromptCatalog.defaultPromptFile,
             useCloud: false,
+            dictatorServerHost: Self.defaultDictatorServerHost,
+            dictatorServerPort: Self.defaultDictatorServerPort,
+            dictatorServerEnabled: Self.defaultDictatorServerEnabled,
             updatedAt: Self.timestamp(from: now)
         )
     }
@@ -461,6 +491,9 @@ public actor RuntimeConfigProvider {
             ollamaBinPath: runtimeConfig.ollamaBinPath,
             dataDir: runtimeConfig.dataDir,
             systemPromptsDir: runtimeConfig.systemPromptsDir,
+            dictatorServerHost: runtimeConfig.dictatorServerHost,
+            dictatorServerPort: runtimeConfig.dictatorServerPort,
+            dictatorServerEnabled: runtimeConfig.dictatorServerEnabled,
             updatedAt: RuntimeConfigFile.timestamp(from: now)
         )
         return next

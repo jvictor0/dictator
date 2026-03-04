@@ -127,6 +127,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
     private var interactionStoreSetupTask: Task<Void, Never>?
     private var interactionsOverlayTab: LaunchpadInteractionsOverlayTab?
     private var secretsLoadError: String?
+    private var dictationServer: DictationHTTPServer?
 
     override init() {
         super.init()
@@ -183,6 +184,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 TraceLogger.log("runtime configuration manager startup failed: \(error)")
             }
         }
+
+        startDictationServerIfEnabled()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -192,6 +195,34 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         managedOllamaProcess = nil
         launchpadRenderWorker?.stop()
         launchpadMIDIManager?.stop()
+        if let dictationServer {
+            Task {
+                await dictationServer.stop()
+            }
+        }
+    }
+
+    private func startDictationServerIfEnabled() {
+        let startupConfig = (try? runtimeConfigStore.load()) ?? (try? safeRuntimeConfigStore.load()) ?? RuntimeConfigFile.bootstrap()
+        guard startupConfig.dictatorServerEnabled else {
+            TraceLogger.log("dictation HTTP server disabled by config")
+            return
+        }
+
+        let server = DictationHTTPServer(
+            host: startupConfig.dictatorServerHost,
+            port: startupConfig.dictatorServerPort,
+            coreClient: coreClient
+        )
+        dictationServer = server
+        Task {
+            do {
+                try await server.start()
+                TraceLogger.log("dictation HTTP server listening on \(server.bindDescription)")
+            } catch {
+                TraceLogger.log("dictation HTTP server failed to start: \(error)")
+            }
+        }
     }
 
     @MainActor

@@ -20,7 +20,8 @@ Swift menubar scaffold for Dictator.
 - Pressing Caps Lock toggles recording state
 - Recording `on` shows `🔴` indicator in menubar title (`🫡 🔴`)
 - Recording `off` runs in-process `DictatorCore` pipeline and inserts returned revised text
-- On recording start, app captures frontmost target context and includes it in `optional_context` for `/v1/dictate`
+- Embedded LAN HTTP server accepts `POST /v1/dictate-audio` (audio/wav + metadata headers) and routes requests through `PipelineOrchestrator.dictate`
+- On recording start, app captures frontmost target context and includes it in `optional_context` for dictation
 - If text is selected when recording starts, app captures selected text and sends it in `optional_context.selected_text`
 - Pressing Backspace during recording cancels/discards the recording
 - Empty STT transcript path skips refinement and insertion
@@ -50,6 +51,9 @@ Swift menubar scaffold for Dictator.
 - `stt_language`
 - `data_dir`
 - `interactions_buffer_bytes`
+- `dictator_server_enabled`
+- `dictator_server_host`
+- `dictator_server_port`
 - `updated_at`
 
 ## Local AI runtime (Ollama + Qwen)

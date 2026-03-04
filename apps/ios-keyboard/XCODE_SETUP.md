@@ -1,48 +1,25 @@
-# iOS Direct-Device Setup (No TestFlight)
+# iOS Direct-Device Setup
 
-This guide assumes you already have Xcode + iOS signing working on this machine.
+Active iOS project path:
 
-## 1) Create Xcode project in this folder
+- `apps/ios-keyboard/DictatorKeyboardHost/DictatorKeyboardHost.xcodeproj`
 
-1. Open Xcode.
-2. `File > New > Project... > iOS App`.
-3. Save as:
-   - Project location: `apps/ios-keyboard`
-   - Project name: `DictatorKeyboardHost`
-4. Language: Swift, Interface: SwiftUI.
+This guide assumes Xcode + iOS signing is already working on this machine.
 
-## 2) Add keyboard extension target
+## 1) Open and configure the existing project
 
-1. In project settings, click `+` under Targets.
-2. Add `Custom Keyboard Extension` target.
-3. Name it `DictatorKeyboardExtension`.
+1. Open `DictatorKeyboardHost.xcodeproj` in Xcode.
+2. Confirm targets:
+   - `DictatorKeyboardHost` (host app)
+   - `DictatorKeyboardExtension` (custom keyboard)
 
-## 3) Wire source files from this repo
+## 2) Configure entitlements
 
-Add these groups/files into the project (drag as folder references disabled):
+1. Host target entitlements: `HostApp/HostApp.entitlements`
+2. Extension target entitlements: `DictatorKeyboardExtension/KeyboardExtension.entitlements`
+3. Confirm app group: `group.com.joyo.dictator`
 
-- `apps/ios-keyboard/HostApp/`
-- `apps/ios-keyboard/KeyboardExtension/`
-- `apps/ios-keyboard/Shared/`
-
-Ensure target membership:
-
-- Host target: `HostApp/*` + `Shared/*`
-- Extension target: `KeyboardExtension/*` + `Shared/*`
-
-## 4) Configure entitlements and Info.plist
-
-1. Host target:
-   - Set entitlements file to `HostApp/HostApp.entitlements`
-2. Extension target:
-   - Set entitlements file to `KeyboardExtension/KeyboardExtension.entitlements`
-   - Set Info.plist to `KeyboardExtension/Info.plist`
-
-Update placeholders in both entitlements files:
-
-- `group.com.joyo.dictator`
-
-## 5) Signing + capabilities
+## 3) Signing + capabilities
 
 For both targets:
 
@@ -53,12 +30,12 @@ For both targets:
 3. Capabilities:
    - App Groups: `group.com.joyo.dictator`
 
-## 6) Build settings for shared core
+## 4) Configure keyboard runtime values
 
-If you integrate local package targets later, point both targets to the local package path and add `DictatorCore` dependency.
-For initial deployment scaffold, this step can be deferred.
+1. Set `ios_client_host_url` in host + extension `Info.plist` values to your Mac LAN URL.
+2. Keep extension `RequestsOpenAccess = YES` for LAN networking.
 
-## 7) Install on iPhone directly
+## 5) Install on iPhone directly
 
 1. Connect iPhone and trust development profile.
 2. Select iPhone as run destination.
@@ -69,8 +46,10 @@ For initial deployment scaffold, this step can be deferred.
    - Enable `Allow Full Access`
 5. Open host app and verify diagnostics.
 
-## 8) Smoke test
+## 6) Smoke test
 
 1. Open Notes and switch to your custom keyboard.
-2. Confirm keyboard status updates and text insertion path.
+2. Tap the large dictation button to start/stop recording.
+3. Confirm state colors: white (idle), red (recording), blue (waiting for server).
+4. Confirm revised text is inserted on successful response.
 3. Confirm failure messages are explicit if network/runtime is unavailable.

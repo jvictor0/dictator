@@ -55,31 +55,31 @@ endpoints:
           type: array
           items: { type: string }
 
-  - path: /v1/dictate
+  - path: /v1/dictate-audio
     method: POST
     request:
-      content_type: application/json
-      body:
-        type: object
-        required: [audio_b64, sample_rate, locale, session_id]
+      content_type: audio/wav
+      transfer: chunked-or-content-length
+      headers:
+        required: [X-Sample-Rate, X-Locale, X-Session-Id]
         properties:
-          audio_b64: { type: string }
-          sample_rate: { type: integer }
-          locale: { type: string }
-          session_id: { type: string }
-          optional_context:
-            type: object
-            additionalProperties: true
-          style_prefs:
-            type: object
-            additionalProperties: true
+          X-Sample-Rate: { type: integer }
+          X-Locale: { type: string }
+          X-Session-Id: { type: string }
+          X-Context-Json: { type: string, description: "JSON object encoded as header string." }
+          X-Style-Prefs-Json: { type: string, description: "JSON object encoded as header string." }
+      body:
+        type: binary
+        format: wav
     response:
       type: object
-      required: [raw_transcript, revised_text, edit_summary, uncertainty_flags]
+      required: [raw_transcript, revised_text, edit_summary, uncertainty_flags, transcribe_ms, refine_ms]
       properties:
         raw_transcript: { type: string }
         revised_text: { type: string }
         edit_summary: { type: string }
+        transcribe_ms: { type: integer }
+        refine_ms: { type: integer }
         uncertainty_flags:
           type: array
           items: { type: string }

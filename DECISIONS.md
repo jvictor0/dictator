@@ -17,3 +17,4 @@ Use this log for concise decision entries. For major architecture decisions, cre
 - 2026-02-21 | bootstrap | Adopt role-based workflow with per-work-item handoff folders | Superseded | `/Users/joyo/dictator/AGENTS.md`
 - 2026-02-21 | bootstrap | Set implementer limit to 2 passes, no automatic architect escalation | Superseded | `/Users/joyo/dictator/AGENTS.md`
 - 2026-03-03 | reset | Remove role/work-item workflow system and operate directly | Accepted | `/Users/joyo/dictator/AGENTS.md`
+- 2026-03-04 | ios-keyboard-lan-dictation | iOS custom keyboard extension microphone capture is blocked by platform/runtime constraints in this architecture; LAN request/typing flow implemented, mic-capture path paused pending alternate architecture (host-app capture or system dictation path) | Accepted | `/Users/joyo/dictator/apps/ios-keyboard/README.md`

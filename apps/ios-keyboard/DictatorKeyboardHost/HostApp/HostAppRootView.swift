@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct HostAppRootView: View {
+    private var configuredServerURL: String {
+        SharedConfig.resolvedServerURLString(bundle: .main)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -11,6 +15,10 @@ struct HostAppRootView: View {
 
                 Section("Status") {
                     Text("This template stores no secrets and has no API key entry.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("Server URL: \(configuredServerURL)")
+                    Text("Mic and network checks run in keyboard extension at runtime.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

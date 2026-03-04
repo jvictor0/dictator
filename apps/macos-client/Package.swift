@@ -8,6 +8,9 @@ let package = Package(
         .library(name: "DictatorCore", targets: ["DictatorCore"]),
         .executable(name: "DictatorApp", targets: ["DictatorApp"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.67.0")
+    ],
     targets: [
         .systemLibrary(
             name: "CWhisper"
@@ -29,7 +32,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "DictatorApp",
-            dependencies: ["DictatorCore"],
+            dependencies: [
+                "DictatorCore",
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio")
+            ],
             path: "Sources/DictatorApp"
         ),
         .testTarget(
