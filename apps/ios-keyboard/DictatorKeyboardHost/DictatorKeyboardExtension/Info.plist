@@ -5,7 +5,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Dictator keyboard records short audio snippets for dictation.</string>
 	<key>ios_client_host_url</key>
-	<string>http://192.168.1.12:8787</string>
+	<string>http://192.168.1.56:8787</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>
