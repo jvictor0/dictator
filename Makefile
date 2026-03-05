@@ -1,9 +1,12 @@
-.PHONY: build-macos test-macos ci
+.PHONY: build-macos test-macos clean-macos ci
 
 build-macos:
-	cd apps/macos-client && swift build
+	cd apps/dictator-main && swift build
 
 test-macos:
-	cd apps/macos-client && swift test
+	cd apps/dictator-main && swift test
+
+clean-macos:
+	cd apps/dictator-main && swift package clean
 
 ci: test-macos

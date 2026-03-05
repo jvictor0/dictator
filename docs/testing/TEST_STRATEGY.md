@@ -14,7 +14,7 @@
 
 ## Minimum CI checks
 
-- `swift test` in `apps/macos-client`
+- `swift test` in `apps/dictator-main`
 
 ## Manual checks (later)
 

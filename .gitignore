@@ -20,13 +20,13 @@ DerivedData/
 .env
 .env.local
 .env~
-apps/macos-client/Config/secrets.json
+apps/dictator-main/Config/secrets.json
 
 # Editors
 .vscode/
 .idea/
 
 .swiftpm-module-cache/
-apps/macos-client/models/
+apps/dictator-main/models/
 
-apps/macos-client/Data/
+apps/dictator-main/Data/

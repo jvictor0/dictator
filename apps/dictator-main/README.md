@@ -6,11 +6,11 @@ Swift menubar scaffold for Dictator.
 
 - Environment variables are never used for runtime configuration.
 - All non-secret settings are configured via files:
-  - `apps/macos-client/Config/runtime-config.json` (active runtime settings)
-  - `apps/macos-client/Config/runtime-config.safe` (safe restore defaults)
+  - `apps/dictator-main/Config/runtime-config.json` (active runtime settings)
+  - `apps/dictator-main/Config/runtime-config.safe` (safe restore defaults)
 - Secrets are configured via:
-  - `apps/macos-client/Config/secrets.json` (local only, gitignored)
-  - `apps/macos-client/Config/secrets.example.json` (tracked template with empty placeholders)
+  - `apps/dictator-main/Config/secrets.json` (local only, gitignored)
+  - `apps/dictator-main/Config/secrets.example.json` (tracked template with empty placeholders)
 - On startup, the app reads `secrets.json` once and keeps secrets in memory for the current session.
 - Keychain is not used.
 

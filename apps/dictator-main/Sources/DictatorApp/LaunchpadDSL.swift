@@ -80,7 +80,7 @@ enum LaunchpadLayoutLoader {
 
         return [
             "\(current)/Config/launchpad-layout.json",
-            "\(current)/apps/macos-client/Config/launchpad-layout.json",
+            "\(current)/apps/dictator-main/Config/launchpad-layout.json",
             "\(sourceDirectory)/Config/launchpad-layout.json"
         ]
     }()

@@ -27,7 +27,7 @@ public struct SecretsStore: SecretStore, Sendable {
             return direct
         }
 
-        let nested = cwd.appendingPathComponent("apps/macos-client/Config/secrets.json")
+        let nested = cwd.appendingPathComponent("apps/dictator-main/Config/secrets.json")
         if fileManager.fileExists(atPath: nested.deletingLastPathComponent().path) {
             return nested
         }
@@ -45,7 +45,7 @@ public struct SecretsStore: SecretStore, Sendable {
             return direct
         }
 
-        let nested = cwd.appendingPathComponent("apps/macos-client/Config/secrets.example.json")
+        let nested = cwd.appendingPathComponent("apps/dictator-main/Config/secrets.example.json")
         if fileManager.fileExists(atPath: nested.deletingLastPathComponent().path) {
             return nested
         }

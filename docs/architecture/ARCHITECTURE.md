@@ -2,13 +2,13 @@
 
 ## Components
 
-- Shared Swift core (`apps/macos-client/Sources/DictatorCore`)
+- Shared Swift core (`apps/dictator-main/Sources/DictatorCore`)
   - Contract DTOs (`Transcribe*`, `Refine*`, `Dictate*`)
   - Pipeline orchestration (`PipelineOrchestrator`)
   - STT/refinement interfaces (`STTEngine`, `RefinementEngine`)
   - Whisper runtime abstraction (`WhisperRuntime`) with native in-process implementation
   - Secret interface (`SecretStore`)
-- macOS wrapper (`apps/macos-client/Sources/DictatorApp`)
+- macOS wrapper (`apps/dictator-main/Sources/DictatorApp`)
   - Menubar state and record toggle
   - Audio capture and insertion UX
   - macOS Keychain `SecretStore` adapter

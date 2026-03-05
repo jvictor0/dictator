@@ -218,7 +218,7 @@ final class RuntimeConfigProviderTests: XCTestCase {
         )
 
         let resolved = runtime.resolvedSystemPromptsDirectoryURL(
-            currentDirectoryPath: "/Users/joyo/dictator/apps/macos-client"
+            currentDirectoryPath: "/Users/joyo/dictator/apps/dictator-main"
         )
 
         XCTAssertEqual(resolved.path, "/Users/joyo/dictator/prompts/system-prompts")
@@ -230,15 +230,15 @@ final class RuntimeConfigProviderTests: XCTestCase {
             cloudModel: "gpt-4.1-mini",
             localModel: "qwen2.5:7b-instruct",
             useCloud: false,
-            dataDir: "apps/macos-client/Data",
+            dataDir: "apps/dictator-main/Data",
             updatedAt: "2026-03-03T00:00:00Z"
         )
 
         let resolved = runtime.resolvedDataDirectoryURL(
-            currentDirectoryPath: "/Users/joyo/dictator/apps/macos-client"
+            currentDirectoryPath: "/Users/joyo/dictator/apps/dictator-main"
         )
 
-        XCTAssertEqual(resolved.path, "/Users/joyo/dictator/apps/macos-client/Data")
+        XCTAssertEqual(resolved.path, "/Users/joyo/dictator/apps/dictator-main/Data")
     }
 
     private func makeTempDir() throws -> URL {

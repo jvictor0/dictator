@@ -9,7 +9,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public static let defaultSTTModelPath = "models/ggml-base.en.bin"
     public static let defaultSTTLanguage = "en"
     public static let defaultOllamaBinPath = "/opt/homebrew/bin/ollama"
-    public static let defaultDataDir = "apps/macos-client/Data"
+    public static let defaultDataDir = "apps/dictator-main/Data"
     public static let defaultSystemPromptsDir = "prompts/system-prompts"
     public static let defaultDictatorServerHost = "0.0.0.0"
     public static let defaultDictatorServerPort = 8787
@@ -339,7 +339,7 @@ public struct RuntimeConfigStore {
             return direct
         }
 
-        let nested = cwd.appendingPathComponent("apps/macos-client/Config/runtime-config.json")
+        let nested = cwd.appendingPathComponent("apps/dictator-main/Config/runtime-config.json")
         if fileManager.fileExists(atPath: nested.deletingLastPathComponent().path) {
             return nested
         }
@@ -357,7 +357,7 @@ public struct RuntimeConfigStore {
             return direct
         }
 
-        let nested = cwd.appendingPathComponent("apps/macos-client/Config/runtime-config.safe")
+        let nested = cwd.appendingPathComponent("apps/dictator-main/Config/runtime-config.safe")
         if fileManager.fileExists(atPath: nested.deletingLastPathComponent().path) {
             return nested
         }

@@ -32,9 +32,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Build
         run: |
-          cd apps/macos-client
+          cd apps/dictator-main
           swift build
       - name: Test
         run: |
-          cd apps/macos-client
+          cd apps/dictator-main
           swift test
