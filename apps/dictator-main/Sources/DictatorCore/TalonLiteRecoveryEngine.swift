@@ -1,71 +1,10 @@
 import Foundation
 
-public struct TalonLiteRecoveryDecision: Sendable, Equatable {
-    public enum Kind: String, Sendable {
-        case recovered
-        case cannotRecover = "cannot_recover"
-    }
-
-    public let kind: Kind
-    public let transcript: String?
-
-    public init(kind: Kind, transcript: String? = nil) {
-        self.kind = kind
-        self.transcript = transcript
-    }
+public protocol TalonLiteLLMCorrectionEngine: Sendable {
+    func correctToGrammar(_ transcript: String) async throws -> String
 }
 
-public enum TalonLiteRecoveryDecisionParser {
-    public static func parse(_ rawJSON: String) throws -> TalonLiteRecoveryDecision {
-        guard let data = rawJSON.data(using: .utf8) else {
-            throw DictatorError.talonRecoveryFailed("recovery payload is not valid JSON")
-        }
-        let jsonObject: Any
-        do {
-            jsonObject = try JSONSerialization.jsonObject(with: data)
-        } catch {
-            throw DictatorError.talonRecoveryFailed("recovery payload is not valid JSON")
-        }
-        guard let json = jsonObject as? [String: Any] else {
-            throw DictatorError.talonRecoveryFailed("recovery payload is not valid JSON")
-        }
-
-        let allowedKeys: Set<String> = ["decision", "transcript"]
-        let unknownKeys = Set(json.keys).subtracting(allowedKeys)
-        if !unknownKeys.isEmpty {
-            throw DictatorError.talonRecoveryFailed("recovery payload contains unsupported keys: \(unknownKeys.sorted())")
-        }
-
-        guard let rawDecision = json["decision"] as? String,
-              let kind = TalonLiteRecoveryDecision.Kind(rawValue: rawDecision)
-        else {
-            throw DictatorError.talonRecoveryFailed("recovery decision must be recovered/cannot_recover")
-        }
-
-        switch kind {
-        case .cannotRecover:
-            if json["transcript"] != nil {
-                throw DictatorError.talonRecoveryFailed("transcript must be omitted when decision=cannot_recover")
-            }
-            return TalonLiteRecoveryDecision(kind: .cannotRecover)
-        case .recovered:
-            guard let transcript = json["transcript"] as? String else {
-                throw DictatorError.talonRecoveryFailed("transcript is required when decision=recovered")
-            }
-            let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                throw DictatorError.talonRecoveryFailed("transcript cannot be empty when decision=recovered")
-            }
-            return TalonLiteRecoveryDecision(kind: .recovered, transcript: trimmed)
-        }
-    }
-}
-
-public protocol TalonLiteRecoveryEngine: Sendable {
-    func recoverTranscript(_ transcript: String) async throws -> TalonLiteRecoveryDecision
-}
-
-public final class RuntimeConfigTalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
+public final class RuntimeConfigTalonLiteLLMCorrectionEngine: TalonLiteLLMCorrectionEngine {
     private let runtimeConfigProvider: RuntimeConfigProvider
     private let secretStore: SecretStore
     private let session: URLSession
@@ -83,15 +22,15 @@ public final class RuntimeConfigTalonLiteRecoveryEngine: TalonLiteRecoveryEngine
         self.canUseOpenAI = canUseOpenAI
     }
 
-    public func recoverTranscript(_ transcript: String) async throws -> TalonLiteRecoveryDecision {
+    public func correctToGrammar(_ transcript: String) async throws -> String {
         let configuration = await runtimeConfigProvider.currentConfiguration()
 
-        let ollamaEngine = OllamaTalonLiteRecoveryEngine(
+        let ollamaEngine = OllamaTalonLiteLLMCorrectionEngine(
             host: configuration.ollamaHost,
             model: configuration.ollamaModel,
             session: session
         )
-        let openAIEngine = OpenAITalonLiteRecoveryEngine(
+        let openAIEngine = OpenAITalonLiteLLMCorrectionEngine(
             model: configuration.openAIModel,
             secretStore: secretStore,
             session: session
@@ -99,21 +38,21 @@ public final class RuntimeConfigTalonLiteRecoveryEngine: TalonLiteRecoveryEngine
 
         switch configuration.provider {
         case .openai:
-            return try await openAIEngine.recoverTranscript(transcript)
+            return try await openAIEngine.correctToGrammar(transcript)
         case .ollama:
             do {
-                return try await ollamaEngine.recoverTranscript(transcript)
+                return try await ollamaEngine.correctToGrammar(transcript)
             } catch {
                 guard configuration.fallback == .openai, canUseOpenAI() else {
                     throw error
                 }
-                return try await openAIEngine.recoverTranscript(transcript)
+                return try await openAIEngine.correctToGrammar(transcript)
             }
         }
     }
 }
 
-public final class OpenAITalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
+public final class OpenAITalonLiteLLMCorrectionEngine: TalonLiteLLMCorrectionEngine {
     private let model: String
     private let secretStore: SecretStore
     private let session: URLSession
@@ -128,7 +67,7 @@ public final class OpenAITalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
         self.session = session
     }
 
-    public func recoverTranscript(_ transcript: String) async throws -> TalonLiteRecoveryDecision {
+    public func correctToGrammar(_ transcript: String) async throws -> String {
         guard let key = try APIKeyResolver.resolve(fallback: { try secretStore.getOpenAIKey() }) else {
             throw DictatorError.missingApiKey
         }
@@ -138,6 +77,7 @@ public final class OpenAITalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
             instructions: Self.instructions,
             input: Self.input(transcript: transcript)
         )
+
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -154,49 +94,48 @@ public final class OpenAITalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
             {
                 throw DictatorError.networkUnavailable
             }
-            throw DictatorError.talonRecoveryFailed(String(describing: error))
+            throw DictatorError.talonPipelineFailed("llm_correction: \(String(describing: error))")
         }
 
         guard let http = response as? HTTPURLResponse else {
-            throw DictatorError.talonRecoveryFailed("invalid server response")
+            throw DictatorError.talonPipelineFailed("llm_correction: invalid server response")
         }
         if http.statusCode == 401 || http.statusCode == 403 {
             throw DictatorError.invalidApiKey
         }
         guard (200 ... 299).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-            throw DictatorError.talonRecoveryFailed(String(message.prefix(220)))
+            throw DictatorError.talonPipelineFailed("llm_correction: \(String(message.prefix(220)))")
         }
 
         let decoded = try JSONDecoder().decode(ResponsesOutput.self, from: data)
-        guard let output = decoded.firstOutputText else {
-            throw DictatorError.talonRecoveryFailed("OpenAI response did not include output text")
+        guard let output = decoded.firstOutputText,
+              !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw DictatorError.talonPipelineFailed("llm_correction: OpenAI response did not include output text")
         }
 
-        return try TalonLiteRecoveryDecisionParser.parse(output)
-    }
-
-    private static func input(transcript: String) -> String {
-        """
-        Whisper transcript (possibly wrong):
-        \(transcript)
-        """
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static let instructions = """
-    You are a Talon parser.
-    \(TalonLiteParser.grammarText)
+    You are correcting Whisper transcripts into Talon Lite utterances.
 
-    This text came from Whisper and may contain transcription errors. Correct it into the closest valid Talon-lite utterance.
+    \(TalonLiteGrammarParser.grammarText)
 
     Rules:
-    - Only use tokens allowed by the grammar.
-    - Output must be strict JSON and nothing else.
-    - Allowed JSON outputs:
-      {"decision":"recovered","transcript":"<corrected utterance>"}
-      {"decision":"cannot_recover"}
-    - If ambiguous or not confidently recoverable, return cannot_recover.
+    - Output a single corrected Talon Lite transcript that matches the grammar exactly.
+    - Use only tokens and operators allowed by the grammar.
+    - Do not include explanations, JSON, markdown, or extra commentary.
+    - If unsure, output the closest valid grammar-conforming utterance.
     """
+
+    private static func input(transcript: String) -> String {
+        """
+        Whisper transcript (possibly incorrect):
+        \(transcript)
+        """
+    }
 
     private struct ResponsesPayload: Encodable {
         let model: String
@@ -229,7 +168,7 @@ public final class OpenAITalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
     }
 }
 
-public final class OllamaTalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
+public final class OllamaTalonLiteLLMCorrectionEngine: TalonLiteLLMCorrectionEngine {
     private let host: String
     private let model: String
     private let session: URLSession
@@ -240,15 +179,15 @@ public final class OllamaTalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
         self.session = session
     }
 
-    public func recoverTranscript(_ transcript: String) async throws -> TalonLiteRecoveryDecision {
+    public func correctToGrammar(_ transcript: String) async throws -> String {
         guard let url = URL(string: "\(host)/api/generate") else {
-            throw DictatorError.talonRecoveryFailed("invalid Ollama host")
+            throw DictatorError.talonPipelineFailed("llm_correction: invalid Ollama host")
         }
 
         let payload = GeneratePayload(
             model: model,
-            prompt: "Whisper transcript (possibly wrong):\n\(transcript)",
-            system: OpenAITalonLiteRecoveryEngine.instructions,
+            prompt: "Whisper transcript (possibly incorrect):\n\(transcript)",
+            system: OpenAITalonLiteLLMCorrectionEngine.instructions,
             stream: false
         )
 
@@ -267,25 +206,26 @@ public final class OllamaTalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
             {
                 throw DictatorError.networkUnavailable
             }
-            throw DictatorError.talonRecoveryFailed(String(describing: error))
+            throw DictatorError.talonPipelineFailed("llm_correction: \(String(describing: error))")
         }
 
         guard let http = response as? HTTPURLResponse else {
-            throw DictatorError.talonRecoveryFailed("invalid Ollama response")
+            throw DictatorError.talonPipelineFailed("llm_correction: invalid Ollama response")
         }
+
         guard (200 ... 299).contains(http.statusCode) else {
             let message = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
-            throw DictatorError.talonRecoveryFailed(String(message.prefix(220)))
+            throw DictatorError.talonPipelineFailed("llm_correction: \(String(message.prefix(220)))")
         }
 
         let decoded = try JSONDecoder().decode(GenerateResponse.self, from: data)
         guard let output = decoded.response,
               !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-            throw DictatorError.talonRecoveryFailed("Ollama response did not include output text")
+            throw DictatorError.talonPipelineFailed("llm_correction: Ollama response did not include output text")
         }
 
-        return try TalonLiteRecoveryDecisionParser.parse(output)
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private struct GeneratePayload: Encodable {
@@ -300,99 +240,115 @@ public final class OllamaTalonLiteRecoveryEngine: TalonLiteRecoveryEngine {
     }
 }
 
-public struct TalonLiteProcessResult: Sendable, Equatable {
+public struct TalonLitePipelineResult: Sendable, Equatable {
     public let rawTranscript: String
+    public let grammarTranscript: String
     public let outputText: String
-    public let style: TalonLiteStyle
-    public let recoveredTranscript: String?
+    public let wasLLMCorrected: Bool
     public let transcribeMs: Int
-    public let parseAndRecoveryMs: Int
+    public let pipelineMs: Int
 
     public init(
         rawTranscript: String,
+        grammarTranscript: String,
         outputText: String,
-        style: TalonLiteStyle,
-        recoveredTranscript: String?,
+        wasLLMCorrected: Bool,
         transcribeMs: Int,
-        parseAndRecoveryMs: Int
+        pipelineMs: Int
     ) {
         self.rawTranscript = rawTranscript
+        self.grammarTranscript = grammarTranscript
         self.outputText = outputText
-        self.style = style
-        self.recoveredTranscript = recoveredTranscript
+        self.wasLLMCorrected = wasLLMCorrected
         self.transcribeMs = transcribeMs
-        self.parseAndRecoveryMs = parseAndRecoveryMs
+        self.pipelineMs = pipelineMs
     }
 }
 
-public final class TalonLiteOrchestrator: Sendable {
+public final class TalonLitePipelineOrchestrator: Sendable {
     private let sttEngine: STTEngine
-    private let recoveryEngine: TalonLiteRecoveryEngine
+    private let correctionEngine: TalonLiteLLMCorrectionEngine
     private let trace: (@Sendable (String) -> Void)?
 
     public init(
         sttEngine: STTEngine,
-        recoveryEngine: TalonLiteRecoveryEngine,
+        correctionEngine: TalonLiteLLMCorrectionEngine,
         trace: (@Sendable (String) -> Void)? = nil
     ) {
         self.sttEngine = sttEngine
-        self.recoveryEngine = recoveryEngine
+        self.correctionEngine = correctionEngine
         self.trace = trace
     }
 
-    public func process(_ request: TranscribeRequest) async throws -> TalonLiteProcessResult {
+    public func process(_ request: TranscribeRequest) async throws -> TalonLitePipelineResult {
+        let start = ContinuousClock.now
         let transcribeStart = ContinuousClock.now
         let transcribed = try await sttEngine.transcribe(request)
         let transcribeMs = transcribeStart.durationMs
         let rawTranscript = transcribed.raw_transcript
+        let normalizedTranscript = Self.lettersOnlyTranscript(from: rawTranscript)
         trace?("talon-lite raw transcript: \(Self.logSafeText(rawTranscript))")
-        let parseStart = ContinuousClock.now
+        trace?("talon-lite normalized transcript: \(Self.logSafeText(normalizedTranscript))")
 
         do {
-            let parsed = try TalonLiteParser.parse(rawTranscript)
-            trace?("talon-lite parse success style=\(parsed.style.rawValue) output=\(Self.logSafeText(parsed.outputText))")
-            return TalonLiteProcessResult(
+            let ast = try TalonLiteGrammarParser.parse(normalizedTranscript)
+            let rendered = try TalonLiteRenderer.render(ast)
+            trace?("talon-lite parse/render success without correction")
+            return TalonLitePipelineResult(
                 rawTranscript: rawTranscript,
-                outputText: parsed.outputText,
-                style: parsed.style,
-                recoveredTranscript: nil,
+                grammarTranscript: normalizedTranscript,
+                outputText: rendered,
+                wasLLMCorrected: false,
                 transcribeMs: transcribeMs,
-                parseAndRecoveryMs: parseStart.durationMs
+                pipelineMs: start.durationMs
             )
-        } catch let parseError as TalonLiteParseError where parseError.isRecoverableUnknownToken {
-            trace?("talon-lite parse recoverable failure reason=\(parseError.message)")
-            let recovery = try await recoveryEngine.recoverTranscript(rawTranscript)
-            trace?("talon-lite recovery decision=\(recovery.kind.rawValue)")
-            guard recovery.kind == .recovered,
-                  let corrected = recovery.transcript
-            else {
-                throw DictatorError.talonRecoveryFailed("recovery model could not determine valid Talon tokens")
+        } catch let parseError as TalonLiteGrammarParseError {
+            trace?("talon-lite parse failed before correction: \(parseError.message)")
+            let corrected = try await correctionEngine.correctToGrammar(normalizedTranscript)
+            trace?("talon-lite corrected transcript: \(Self.logSafeText(corrected))")
+
+            let ast: TalonLiteAST
+            do {
+                ast = try TalonLiteGrammarParser.parse(corrected)
+            } catch let reparseError as TalonLiteGrammarParseError {
+                trace?("talon-lite reparse failed: \(reparseError.message)")
+                throw DictatorError.talonPipelineFailed("reparse: \(reparseError.message)")
             }
-            trace?("talon-lite recovered transcript: \(Self.logSafeText(corrected))")
 
             do {
-                let reparsed = try TalonLiteParser.parse(corrected)
-                trace?("talon-lite reparse success style=\(reparsed.style.rawValue) output=\(Self.logSafeText(reparsed.outputText))")
-                return TalonLiteProcessResult(
+                let rendered = try TalonLiteRenderer.render(ast)
+                return TalonLitePipelineResult(
                     rawTranscript: rawTranscript,
-                    outputText: reparsed.outputText,
-                    style: reparsed.style,
-                    recoveredTranscript: corrected,
+                    grammarTranscript: corrected,
+                    outputText: rendered,
+                    wasLLMCorrected: true,
                     transcribeMs: transcribeMs,
-                    parseAndRecoveryMs: parseStart.durationMs
+                    pipelineMs: start.durationMs
                 )
-            } catch let secondParseError as TalonLiteParseError {
-                trace?("talon-lite reparse failed reason=\(secondParseError.message)")
-                throw DictatorError.talonRecoveryFailed("recovered transcript is still invalid: \(secondParseError.message)")
+            } catch let error as DictatorError {
+                throw error
+            } catch {
+                throw DictatorError.talonPipelineFailed("render: \(String(describing: error))")
             }
-        } catch let parseError as TalonLiteParseError {
-            trace?("talon-lite parse terminal failure reason=\(parseError.message)")
-            throw DictatorError.talonParseFailed(parseError.message)
+        } catch let error as DictatorError {
+            throw error
+        } catch {
+            throw DictatorError.talonPipelineFailed("parse: \(String(describing: error))")
         }
     }
 
     private static func logSafeText(_ text: String) -> String {
         text.replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private static func lettersOnlyTranscript(from input: String) -> String {
+        let mapped = input.map { ch -> Character in
+            if ch.isLetter || ch.isWhitespace {
+                return ch
+            }
+            return " "
+        }
+        return String(mapped).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 }
 

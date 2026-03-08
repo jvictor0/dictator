@@ -28,6 +28,7 @@ struct DictationInteraction: Sendable, Equatable {
     let optionalContext: [String: String]
     let editSummary: String
     let uncertaintyFlags: [String]
+    let errorMessage: String?
     let timings: DictationInteractionTimings
     let trackedSizeBytes: Int
 
@@ -44,6 +45,7 @@ struct DictationInteraction: Sendable, Equatable {
         optionalContext: [String: String],
         editSummary: String,
         uncertaintyFlags: [String],
+        errorMessage: String? = nil,
         timings: DictationInteractionTimings
     ) {
         self.id = id
@@ -58,8 +60,9 @@ struct DictationInteraction: Sendable, Equatable {
         self.optionalContext = optionalContext
         self.editSummary = editSummary
         self.uncertaintyFlags = uncertaintyFlags
+        self.errorMessage = errorMessage
         self.timings = timings
-        self.trackedSizeBytes = whisperOutput.utf8.count + finalOutput.utf8.count
+        self.trackedSizeBytes = whisperOutput.utf8.count + finalOutput.utf8.count + (errorMessage?.utf8.count ?? 0)
     }
 }
 
@@ -236,6 +239,7 @@ private struct StoredInteractionPayload: Codable {
     let optionalContext: [String: String]?
     let editSummary: String?
     let uncertaintyFlags: [String]?
+    let errorMessage: String?
     let timings: StoredInteractionTimings?
 
     enum CodingKeys: String, CodingKey {
@@ -251,6 +255,7 @@ private struct StoredInteractionPayload: Codable {
         case optionalContext = "optional_context"
         case editSummary = "edit_summary"
         case uncertaintyFlags = "uncertainty_flags"
+        case errorMessage = "error_message"
         case timings
     }
 
@@ -267,6 +272,7 @@ private struct StoredInteractionPayload: Codable {
         optionalContext = interaction.optionalContext
         editSummary = interaction.editSummary
         uncertaintyFlags = interaction.uncertaintyFlags
+        errorMessage = interaction.errorMessage
         timings = StoredInteractionTimings(interaction.timings)
     }
 
@@ -287,6 +293,7 @@ private struct StoredInteractionPayload: Codable {
             optionalContext: optionalContext ?? [:],
             editSummary: editSummary ?? "",
             uncertaintyFlags: uncertaintyFlags ?? [],
+            errorMessage: errorMessage,
             timings: timings?.toTimings() ?? DictationInteractionTimings(transcribeMs: 0, refineMs: 0, insertMs: 0, totalPipelineMs: 0)
         )
     }

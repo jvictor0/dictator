@@ -2,92 +2,81 @@ import Foundation
 import XCTest
 @testable import DictatorCore
 
-final class TalonLiteRecoveryEngineTests: XCTestCase {
+final class TalonLiteLLMCorrectionEngineTests: XCTestCase {
     override func tearDown() {
         URLProtocol.unregisterClass(TalonLiteURLProtocolStub.self)
         super.tearDown()
     }
 
-    func testRecoveryDecisionParserRejectsNonJSON() {
-        XCTAssertThrowsError(try TalonLiteRecoveryDecisionParser.parse("not-json")) { error in
-            guard case let DictatorError.talonRecoveryFailed(reason) = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-            XCTAssertTrue(reason.contains("valid JSON"))
-        }
-    }
-
-    func testOpenAIRecoveryParsesRecoveredPayload() async throws {
+    func testOpenAICorrectionReturnsPlainTextOutput() async throws {
         let session = makeSession()
         TalonLiteURLProtocolStub.handler = { request in
             XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/responses")
-            let payload = #"{"output_text":"{\"decision\":\"recovered\",\"transcript\":\"air bat cap\"}"}"#.data(using: .utf8)!
+            let payload = #"{"output_text":"hammer yes no blark"}"#.data(using: .utf8)!
             return (
                 HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
                 payload
             )
         }
 
-        let engine = OpenAITalonLiteRecoveryEngine(
+        let engine = OpenAITalonLiteLLMCorrectionEngine(
             model: "gpt-4.1-mini",
             secretStore: TestSecretStore(key: "test-key"),
             session: session
         )
 
-        let recovered = try await engine.recoverTranscript("air badd cap")
-        XCTAssertEqual(recovered.kind, .recovered)
-        XCTAssertEqual(recovered.transcript, "air bat cap")
+        let corrected = try await engine.correctToGrammar("hamer yes no")
+        XCTAssertEqual(corrected, "hammer yes no blark")
     }
 
-    func testOpenAIRecoveryRejectsInvalidJSONOutput() async {
+    func testOpenAICorrectionRejectsMissingOutputText() async {
         let session = makeSession()
         TalonLiteURLProtocolStub.handler = { request in
-            let payload = #"{"output_text":"hello world"}"#.data(using: .utf8)!
+            let payload = #"{"output":[]}"#.data(using: .utf8)!
             return (
                 HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
                 payload
             )
         }
 
-        let engine = OpenAITalonLiteRecoveryEngine(
+        let engine = OpenAITalonLiteLLMCorrectionEngine(
             model: "gpt-4.1-mini",
             secretStore: TestSecretStore(key: "test-key"),
             session: session
         )
 
         do {
-            _ = try await engine.recoverTranscript("air badd cap")
-            XCTFail("Expected talon recovery failure")
+            _ = try await engine.correctToGrammar("hamer yes no")
+            XCTFail("Expected failure")
         } catch let error as DictatorError {
-            guard case let .talonRecoveryFailed(reason) = error else {
+            guard case let .talonPipelineFailed(reason) = error else {
                 return XCTFail("Unexpected DictatorError: \(error)")
             }
-            XCTAssertTrue(reason.contains("valid JSON"))
+            XCTAssertTrue(reason.contains("llm_correction"))
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
     }
 
-    func testOllamaRecoveryCanReturnCannotRecover() async throws {
+    func testOllamaCorrectionReturnsPlainTextOutput() async throws {
         let session = makeSession()
         TalonLiteURLProtocolStub.handler = { request in
             XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:11434/api/generate")
-            let payload = #"{"response":"{\"decision\":\"cannot_recover\"}"}"#.data(using: .utf8)!
+            let payload = #"{"response":"camel yes no blark"}"#.data(using: .utf8)!
             return (
                 HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
                 payload
             )
         }
 
-        let engine = OllamaTalonLiteRecoveryEngine(
+        let engine = OllamaTalonLiteLLMCorrectionEngine(
             host: "http://127.0.0.1:11434",
             model: "qwen2.5:7b-instruct",
             session: session
         )
 
-        let recovered = try await engine.recoverTranscript("air badd cap")
-        XCTAssertEqual(recovered.kind, .cannotRecover)
-        XCTAssertNil(recovered.transcript)
+        let corrected = try await engine.correctToGrammar("camel yes no")
+        XCTAssertEqual(corrected, "camel yes no blark")
     }
 
     private func makeSession() -> URLSession {

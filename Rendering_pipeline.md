@@ -12,7 +12,7 @@ This document defines how a grammar-valid Talon Lite string is parsed and render
 - Parse expressions and operator calls.
 - Maintain a brace stack for deferred closing tokens.
 - Execute character/identifier operators.
-- Handle bang behavior (`!`) in top-level and operator contexts.
+- Handle bang behavior (`blark`) in top-level and operator contexts.
 
 ## Token Classes Used During Rendering
 
@@ -23,7 +23,7 @@ This document defines how a grammar-valid Talon Lite string is parsed and render
   - Unary character: `shift`
   - N-ary identifier: formatter operators (for example `hammer`)
   - N-ary character: currently none
-- Special token: `!`
+- Special token: `blark`
 
 ## Brace Stack Model
 
@@ -37,15 +37,15 @@ Open-brace character behavior:
 
 ## Bang Operator Semantics
 
-### Top-Level `!`
+### Top-Level `blark`
 
-When `!` is parsed as its own expression item:
+When `blark` is parsed as its own expression item:
 - If brace stack is non-empty: pop and emit the top closing brace.
 - If brace stack is empty: error.
 
 ### In N-ary Operator Calls
 
-In grammar forms like `operator arg+ !`, `!` terminates argument collection for that operator call and is not rendered literally.
+In grammar forms like `operator arg+ blark`, `blark` terminates argument collection for that operator call and is not rendered literally.
 
 ## Operator Semantics
 
@@ -67,31 +67,31 @@ Behavior:
 
 ### N-ary Identifier Operators
 
-Form: `<nary_identifier_operator> <identifier>+ !`
+Form: `<nary_identifier_operator> <identifier>+ blark`
 
 Behavior:
-- Collect identifiers until terminating `!`.
+- Collect identifiers until terminating `blark`.
 - Apply formatter mapped to the specific operator.
 
 Minimum expected mappings:
-- `hammer yes no !` -> `YesNo`
-- `camel yes no !` -> `yesNo`
-- `snake yes no !` -> `yes_no`
-- `kebab yes no !` -> `yes-no`
-- `smash yes no !` -> `yesno`
+- `hammer yes no blark` -> `YesNo`
+- `camel yes no blark` -> `yesNo`
+- `snake yes no blark` -> `yes_no`
+- `kebab yes no blark` -> `yes-no`
+- `smash yes no blark` -> `yesno`
 
 Additional operators follow the same collect-then-format pattern.
 
 ## Example: Stack-Based Bang Closing
 
 Input sequence:
-- `paren angle ! !`
+- `paren angle blark blark`
 
 Execution:
 1. `paren` -> output `(`, push `)`
 2. `angle` -> output `<`, push `>`
-3. `!` -> pop `>`, output `>`
-4. `!` -> pop `)`, output `)`
+3. `blark` -> pop `>`, output `>`
+4. `blark` -> pop `)`, output `)`
 
 Result:
 - `(<>)`
@@ -112,13 +112,13 @@ for each parsed expression item:
     evaluate operator and emit output
 
   else if item is n-ary operator call:
-    collect args until terminating !
+    collect args until terminating blark
     format args by operator
     emit formatted text
 
-  else if item is top-level !:
+  else if item is top-level blark:
     if stack non-empty: pop and emit closer
-    else: emit ! (or fail in strict mode)
+    else: fail
 
 return output buffer as final text
 ```
@@ -126,6 +126,6 @@ return output buffer as final text
 ## Invariants
 
 - Input is grammar-valid before render starts.
-- N-ary operators always terminate with `!`.
+- N-ary operators always terminate with `blark`.
 - Brace stack order guarantees correct nested close emission.
 - Rendering is deterministic for a given parsed input.

@@ -238,6 +238,9 @@ final class LaunchpadInteractionsOverlayTab: LaunchpadOverlayTab {
         let uncertainty = interaction.uncertaintyFlags.isEmpty
             ? "<none>"
             : interaction.uncertaintyFlags.joined(separator: ", ")
+        let errorMessage = interaction.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? interaction.errorMessage!
+            : "<none>"
 
         return [
             InteractionDetailSection(
@@ -270,6 +273,11 @@ final class LaunchpadInteractionsOverlayTab: LaunchpadOverlayTab {
                 title: "Uncertainty Flags",
                 body: uncertainty,
                 defaultExpanded: true
+            ),
+            InteractionDetailSection(
+                title: "Error Message",
+                body: errorMessage,
+                defaultExpanded: interaction.errorMessage != nil
             ),
             InteractionDetailSection(
                 title: "Optional Context",

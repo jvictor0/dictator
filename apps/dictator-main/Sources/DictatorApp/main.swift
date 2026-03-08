@@ -73,16 +73,16 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         refinementEngine: makeRefinementEngine()
     )
     private lazy var apiClient: APIClient = APIClient(coreClient: coreClient)
-    private lazy var talonLiteRecoveryEngine: TalonLiteRecoveryEngine = RuntimeConfigTalonLiteRecoveryEngine(
+    private lazy var talonLiteCorrectionEngine: TalonLiteLLMCorrectionEngine = RuntimeConfigTalonLiteLLMCorrectionEngine(
         runtimeConfigProvider: runtimeConfigProvider,
         secretStore: secretStore,
         canUseOpenAI: { [weak self] in
             self?.hasOpenAIKey() ?? false
         }
     )
-    private lazy var talonLiteOrchestrator: TalonLiteOrchestrator = TalonLiteOrchestrator(
+    private lazy var talonLiteOrchestrator: TalonLitePipelineOrchestrator = TalonLitePipelineOrchestrator(
         sttEngine: sttEngine,
-        recoveryEngine: talonLiteRecoveryEngine,
+        correctionEngine: talonLiteCorrectionEngine,
         trace: { message in
             TraceLogger.log(message)
         }
@@ -363,6 +363,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             let requestContext = recordingContext
             recordingContext = nil
             activeInteractionMode = .standard
+            let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
             TraceLogger.log("recording stopped (bytes=\(capturedAudio.data.count), sampleRate=\(capturedAudio.sampleRate))")
             setDictationState(.thinking)
             menuBarController?.setIndicatorState(.refining)
@@ -376,7 +377,6 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let runtimeConfiguration = await runtimeConfigProvider.currentConfiguration()
                 let runtimeConfig = await runtimeConfigProvider.currentRuntimeConfig()
-                let locale = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
                 let pipelineStart = Date()
                 let task = Task { [apiClient, talonLiteOrchestrator] in
                     switch interactionMode {
@@ -399,12 +399,12 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                         let processed = try await talonLiteOrchestrator.process(transcribeRequest)
                         let summary: String
                         let flags: [String]
-                        if let recovered = processed.recoveredTranscript {
-                            summary = "Talon-lite parsed with one-shot LLM recovery."
-                            flags = ["talon_lite_recovered"]
-                            TraceLogger.log("talon-lite recovery transcript: \(Self.logSafeText(recovered))")
+                        if processed.wasLLMCorrected {
+                            summary = "Talon-lite pipeline rendered after LLM correction."
+                            flags = ["talon_lite_llm_corrected"]
+                            TraceLogger.log("talon-lite corrected transcript: \(Self.logSafeText(processed.grammarTranscript))")
                         } else {
-                            summary = "Talon-lite parsed without LLM recovery."
+                            summary = "Talon-lite pipeline rendered without LLM correction."
                             flags = []
                         }
                         return DictateCallResult(
@@ -415,7 +415,7 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                                 uncertainty_flags: flags
                             ),
                             transcribeMs: processed.transcribeMs,
-                            refineMs: processed.parseAndRecoveryMs
+                            refineMs: max(0, processed.pipelineMs - processed.transcribeMs)
                         )
                     }
                 }
@@ -482,6 +482,14 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 menuBarController?.setIndicatorState(.idle)
                 menuBarController?.setState("Failed: \(Self.dictationFailureMessage(for: error))")
                 TraceLogger.log("\(interactionMode == .talonLite ? "talon-lite" : "dictate") failed: \(error)")
+                await appendFailedInteraction(
+                    error: error,
+                    mode: interactionMode,
+                    optionalContext: requestContext,
+                    audioData: capturedAudio.data,
+                    sampleRate: capturedAudio.sampleRate,
+                    locale: locale
+                )
             }
         }
     }
@@ -626,16 +634,43 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
                 return "Config update failed: \(String(reason.prefix(60)))"
             case .configInteractionUnavailable:
                 return "Config interaction unavailable"
-            case let .talonParseFailed(reason):
-                return "Talon parse failed: \(String(reason.prefix(60)))"
-            case let .talonRecoveryFailed(reason):
-                return "Talon recovery failed: \(String(reason.prefix(60)))"
+            case let .talonPipelineFailed(reason):
+                return "Talon pipeline failed: \(String(reason.prefix(60)))"
             }
         }
         if error is APIClientError {
             return "STT returned empty transcript"
         }
         return "Dictation request failed"
+    }
+
+    private static func dictationFailureDetail(for error: Error) -> String {
+        if let dictatorError = error as? DictatorError {
+            switch dictatorError {
+            case .missingApiKey:
+                return "Missing OpenAI key (set from menu or Config/secrets.json)"
+            case .invalidApiKey:
+                return "Invalid OpenAI key"
+            case .networkUnavailable:
+                return "Network unavailable"
+            case let .refinementFailed(reason):
+                return "Refinement failed: \(reason)"
+            case let .sttFailed(reason):
+                return "Speech recognition failed: \(reason)"
+            case let .permissionsDenied(scope):
+                return "Permission denied: \(scope)"
+            case let .configUpdateFailed(reason):
+                return "Config update failed: \(reason)"
+            case .configInteractionUnavailable:
+                return "Config interaction unavailable"
+            case let .talonPipelineFailed(reason):
+                return "Talon pipeline failed: \(reason)"
+            }
+        }
+        if error is APIClientError {
+            return "STT returned empty transcript"
+        }
+        return "Dictation request failed: \(String(describing: error))"
     }
 
     private func logRefinementMode(context: [String: String]?) {
@@ -651,6 +686,16 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
 
     private static func logSafeText(_ text: String) -> String {
         text.replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private static func lettersOnlyTranscript(_ input: String) -> String {
+        let mapped = input.map { ch -> Character in
+            if ch.isLetter || ch.isWhitespace {
+                return ch
+            }
+            return " "
+        }
+        return String(mapped).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
     @MainActor
@@ -1481,7 +1526,8 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         runtimeConfiguration: LLMRuntimeConfiguration,
         runtimeConfig: RuntimeConfigFile,
         insertMs: Int,
-        totalPipelineMs: Int
+        totalPipelineMs: Int,
+        errorMessage: String? = nil
     ) async {
         let response = dictatedCall.response
         let effectiveProvider: String
@@ -1515,11 +1561,101 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             optionalContext: optionalContext ?? [:],
             editSummary: response.edit_summary,
             uncertaintyFlags: response.uncertainty_flags,
+            errorMessage: errorMessage,
             timings: DictationInteractionTimings(
                 transcribeMs: dictatedCall.transcribeMs,
                 refineMs: dictatedCall.refineMs,
                 insertMs: insertMs,
                 totalPipelineMs: totalPipelineMs
+            )
+        )
+        await ensureInteractionStoreReady()
+        if let interactionStore {
+            await interactionStore.append(interaction)
+        } else {
+            interactionBuffer.append(interaction)
+            interactionsOverlayTab?.reloadInteractions()
+        }
+    }
+
+    @MainActor
+    private func appendFailedInteraction(
+        error: Error,
+        mode: InteractionMode,
+        optionalContext: [String: String]?,
+        audioData: Data,
+        sampleRate: Int,
+        locale: String
+    ) async {
+        let runtimeConfiguration = await runtimeConfigProvider.currentConfiguration()
+        let runtimeConfig = await runtimeConfigProvider.currentRuntimeConfig()
+        let provider = runtimeConfiguration.provider.rawValue
+        let model = provider == LLMRuntimeConfiguration.Provider.openai.rawValue
+            ? runtimeConfiguration.openAIModel
+            : runtimeConfiguration.ollamaModel
+        let errorText = Self.dictationFailureDetail(for: error)
+        var whisperOutput = ""
+        var revisionOutput = ""
+        var transcribeMs = 0
+        var refineMs = 0
+
+        let transcribeStart = Date()
+        do {
+            let transcribed = try await sttEngine.transcribe(
+                TranscribeRequest(
+                    audio_b64: audioData.base64EncodedString(),
+                    sample_rate: sampleRate,
+                    locale: locale,
+                    session_id: sessionID
+                )
+            )
+            transcribeMs = Self.elapsedMs(since: transcribeStart)
+            whisperOutput = transcribed.raw_transcript
+        } catch {
+            TraceLogger.log("failed-interaction fallback transcribe failed: \(error)")
+        }
+
+        if !whisperOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let refineStart = Date()
+            do {
+                switch mode {
+                case .standard:
+                    let refined = try await makeRefinementEngine().refine(
+                        RefineRequest(raw_transcript: whisperOutput, optional_context: optionalContext)
+                    )
+                    revisionOutput = refined.revised_text
+                case .talonLite:
+                    let normalized = Self.lettersOnlyTranscript(whisperOutput)
+                    revisionOutput = try await talonLiteCorrectionEngine.correctToGrammar(normalized)
+                }
+                refineMs = Self.elapsedMs(since: refineStart)
+            } catch {
+                TraceLogger.log("failed-interaction fallback revision failed: \(error)")
+            }
+        }
+
+        let summary = mode == .talonLite
+            ? "Talon-lite pipeline failed."
+            : "Dictation pipeline failed."
+        let interaction = DictationInteraction(
+            whisperOutput: whisperOutput,
+            finalOutput: revisionOutput.isEmpty ? errorText : revisionOutput,
+            mode: mode == .talonLite ? .talonLite : .revision,
+            systemPromptPath: runtimeConfig.systemPrompt,
+            systemPromptBody: SystemPromptCatalog(
+                directoryURL: runtimeConfig.resolvedSystemPromptsDirectoryURL()
+            ).resolvePrompt(named: runtimeConfig.systemPrompt),
+            model: model,
+            provider: provider,
+            optionalContext: optionalContext ?? [:],
+            editSummary: summary,
+            uncertaintyFlags: ["pipeline_error"],
+            errorMessage: errorText,
+            timings: DictationInteractionTimings(
+                transcribeMs: transcribeMs,
+                refineMs: refineMs,
+                insertMs: 0,
+                totalPipelineMs: transcribeMs + refineMs
             )
         )
         await ensureInteractionStoreReady()

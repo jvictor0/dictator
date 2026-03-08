@@ -79,10 +79,46 @@ final class InteractionHistoryTests: XCTestCase {
         XCTAssertEqual(constrainedBuffer.snapshot().map(\.id), [latest.id])
     }
 
+    func testPersistenceRoundTripsErrorMessageField() async throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let buffer = DictationInteractionBuffer(maxBytes: 1024 * 1024)
+        let store = InteractionHistoryStore(
+            buffer: buffer,
+            dataDirectoryURL: tempDir,
+            initialLoadBytes: 1024 * 1024,
+            onChanged: nil
+        )
+        await store.startInitialLoadIfNeeded()
+        await store.waitUntilReady()
+
+        let failed = makeInteraction(
+            occurredAt: isoDate("2026-02-24T12:10:00Z"),
+            whisperOutput: "",
+            finalOutput: "Talon pipeline failed: reparse: Invalid Talon token: nope",
+            errorMessage: "Talon pipeline failed: reparse: Invalid Talon token: nope"
+        )
+        await store.append(failed)
+
+        let reloadedBuffer = DictationInteractionBuffer(maxBytes: 1024 * 1024)
+        let reloadedStore = InteractionHistoryStore(
+            buffer: reloadedBuffer,
+            dataDirectoryURL: tempDir,
+            initialLoadBytes: 1024 * 1024,
+            onChanged: nil
+        )
+        await reloadedStore.startInitialLoadIfNeeded()
+        await reloadedStore.waitUntilReady()
+
+        XCTAssertEqual(reloadedBuffer.snapshot().first?.errorMessage, failed.errorMessage)
+    }
+
     private func makeInteraction(
         occurredAt: Date,
         whisperOutput: String,
-        finalOutput: String
+        finalOutput: String,
+        errorMessage: String? = nil
     ) -> DictationInteraction {
         DictationInteraction(
             id: UUID(),
@@ -97,6 +133,7 @@ final class InteractionHistoryTests: XCTestCase {
             optionalContext: [:],
             editSummary: "summary",
             uncertaintyFlags: [],
+            errorMessage: errorMessage,
             timings: DictationInteractionTimings(transcribeMs: 1, refineMs: 2, insertMs: 3, totalPipelineMs: 6)
         )
     }

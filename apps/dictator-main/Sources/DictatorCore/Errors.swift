@@ -9,8 +9,7 @@ public enum DictatorError: Error, Sendable {
     case permissionsDenied(String)
     case configUpdateFailed(String)
     case configInteractionUnavailable
-    case talonParseFailed(String)
-    case talonRecoveryFailed(String)
+    case talonPipelineFailed(String)
 }
 
 extension DictatorError: LocalizedError {
@@ -32,10 +31,8 @@ extension DictatorError: LocalizedError {
             return "Runtime config update failed: \(message)"
         case .configInteractionUnavailable:
             return "Runtime config interaction is unavailable"
-        case let .talonParseFailed(message):
-            return "Talon parse failed: \(message)"
-        case let .talonRecoveryFailed(message):
-            return "Talon recovery failed: \(message)"
+        case let .talonPipelineFailed(message):
+            return "Talon pipeline failed: \(message)"
         }
     }
 }

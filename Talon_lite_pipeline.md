@@ -10,11 +10,11 @@ This document defines the end-to-end Talon Lite processing pipeline.
 ## Pipeline Overview
 
 1. Speech-to-text with Whisper.
-3. Grammar validation against `talon_lite_grammar.md`.
-4. Recovery pass via LLM if validation fails.
-5. Guaranteed grammar-valid transcript.
-6. Rendering/formatting pass.
-7. Cursor injection.
+2. Grammar validation against `talon_lite_grammar.md`.
+3. Recovery pass via LLM if validation fails.
+4. Guaranteed grammar-valid transcript.
+5. Rendering/formatting pass.
+6. Cursor injection.
 
 ## Step 1: Whisper Transcription
 
@@ -25,7 +25,7 @@ This document defines the end-to-end Talon Lite processing pipeline.
 Result: `raw_transcript`.
 
 
-## Step 3: Grammar Match Attempt
+## Step 2: Grammar Match Attempt
 
 - Parse `raw_transcript` against [talon_lite_grammar.md](/Users/joyo/dictator/talon_lite_grammar.md).
 - If parse succeeds: continue directly to rendering.
@@ -33,7 +33,7 @@ Result: `raw_transcript`.
 
 Result on success: `grammar_valid_transcript`.
 
-## Step 4: LLM Recovery (Only On Parse Failure)
+## Step 3: LLM Recovery (Only On Parse Failure)
 
 Send the failed transcript to an LLM with a strict system prompt that includes the grammar.
 
@@ -53,21 +53,21 @@ Send the failed transcript to an LLM with a strict system prompt that includes t
 
 Result: `grammar_valid_transcript`.
 
-## Step 5: Guaranteed Grammar-Valid Transcript
+## Step 4: Guaranteed Grammar-Valid Transcript
 
 At this point, the system holds a transcript that is guaranteed to match the grammar.
 
 Invariant:
 - Downstream rendering receives only grammar-valid input.
 
-## Step 6: Render/Format
+## Step 5: Render/Format
 
 - Send `grammar_valid_transcript` to the rendering pipeline.
 - Rendering handles operator execution, brace balancing behavior, and text-style formatting.
 
 Reference: [Rendering_pipeline.md](/Users/joyo/dictator/Rendering_pipeline.md).
 
-## Step 7: Cursor Injection
+## Step 6: Cursor Injection
 
 - Insert rendered final string at the active cursor location.
 - No additional text transformations are applied after render.
@@ -77,7 +77,6 @@ Reference: [Rendering_pipeline.md](/Users/joyo/dictator/Rendering_pipeline.md).
 ```text
 Audio
   -> Whisper
-  -> band-character replacement
   -> grammar parse
      -> success -> render -> inject
      -> failure -> LLM correction with grammar -> re-parse
