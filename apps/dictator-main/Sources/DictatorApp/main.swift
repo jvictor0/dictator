@@ -212,7 +212,19 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
         let server = DictationHTTPServer(
             host: startupConfig.dictatorServerHost,
             port: startupConfig.dictatorServerPort,
-            coreClient: coreClient
+            coreClient: coreClient,
+            onSuccessRecord: { [weak self] record in
+                guard let self else {
+                    return
+                }
+                await self.appendAPIInteraction(record)
+            },
+            onFailureRecord: { [weak self] record in
+                guard let self else {
+                    return
+                }
+                await self.appendAPIFailedInteraction(record)
+            }
         )
         dictationServer = server
         Task {
@@ -1686,6 +1698,49 @@ final class DictatorAppDelegate: NSObject, NSApplicationDelegate {
             return .rawDictation
         }
         return .revision
+    }
+
+    @MainActor
+    private func appendAPIInteraction(_ record: DictationHTTPSuccessRecord) async {
+        let runtimeConfiguration = await runtimeConfigProvider.currentConfiguration()
+        let runtimeConfig = await runtimeConfigProvider.currentRuntimeConfig()
+        var context = record.optionalContext ?? [:]
+        if context["request_source"] == nil {
+            context["request_source"] = "dictation_http_api"
+        }
+        await appendInteraction(
+            dictatedCall: DictateCallResult(
+                response: record.response,
+                transcribeMs: record.transcribeMs,
+                refineMs: record.refineMs
+            ),
+            optionalContext: context,
+            runtimeConfiguration: runtimeConfiguration,
+            runtimeConfig: runtimeConfig,
+            insertMs: 0,
+            totalPipelineMs: record.totalPipelineMs
+        )
+    }
+
+    @MainActor
+    private func appendAPIFailedInteraction(_ record: DictationHTTPFailureRecord) async {
+        var context = record.optionalContext ?? [:]
+        if context["request_source"] == nil {
+            context["request_source"] = "dictation_http_api"
+        }
+        let error = NSError(
+            domain: "DictationHTTPServer",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: record.errorMessage]
+        )
+        await appendFailedInteraction(
+            error: error,
+            mode: .standard,
+            optionalContext: context,
+            audioData: record.audioData,
+            sampleRate: record.sampleRate,
+            locale: record.locale
+        )
     }
 
     private static func elapsedMs(since start: Date) -> Int {
