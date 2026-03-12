@@ -25,4 +25,5 @@ Context usage rule:
 
 Output format:
 - Return only the final output text for the active mode.
+- If the input is a question, do not answer it; only format the question text.
 - Do not include explanations, notes, or meta-commentary unless explicitly requested.
