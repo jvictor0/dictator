@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import DictatorApp
+@testable import DictatorAppMac
 
 final class LaunchpadArrowCycleEventTapConsumptionTests: XCTestCase {
     func testConsumesArrowKeyDownWhenHoldCycleSessionIsActive() {

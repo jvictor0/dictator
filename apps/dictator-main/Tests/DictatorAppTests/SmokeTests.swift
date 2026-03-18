@@ -1,6 +1,6 @@
 import AppKit
 import XCTest
-@testable import DictatorApp
+@testable import DictatorAppMac
 
 final class SmokeTests: XCTestCase {
     func testStatusTitleIsSaluteEmoji() {

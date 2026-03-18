@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import DictatorAppShared
 import DictatorCore
 
 final class DictatorAppDelegate: NSObject, NSApplicationDelegate {

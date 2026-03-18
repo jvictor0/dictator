@@ -1,6 +1,6 @@
 import XCTest
 import DictatorCore
-@testable import DictatorApp
+@testable import DictatorAppMac
 
 final class LaunchpadTests: XCTestCase {
     func testLaunchpadNoteCoordinateMappingRoundTrip() {

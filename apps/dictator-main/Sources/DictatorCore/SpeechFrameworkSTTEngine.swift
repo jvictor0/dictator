@@ -1,4 +1,6 @@
 import Foundation
+
+#if canImport(Speech)
 import Speech
 
 public final class SpeechFrameworkSTTEngine: STTEngine {
@@ -94,3 +96,16 @@ public final class SpeechFrameworkSTTEngine: STTEngine {
         }
     }
 }
+
+#else
+
+public final class SpeechFrameworkSTTEngine: STTEngine {
+    public init() {}
+
+    public func transcribe(_ request: TranscribeRequest) async throws -> TranscribeResponse {
+        _ = request
+        throw DictatorError.sttFailed("Speech framework is unavailable on this platform")
+    }
+}
+
+#endif

@@ -1,6 +1,6 @@
 import XCTest
 import Darwin
-@testable import DictatorApp
+@testable import DictatorAppMac
 
 final class LaunchpadAppCycleStateTests: XCTestCase {
     func testFirstForwardStepMovesToImmediateNeighborFromSeededCurrent() {

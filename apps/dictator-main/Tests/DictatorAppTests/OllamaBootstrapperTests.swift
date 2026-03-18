@@ -1,5 +1,5 @@
 import XCTest
-@testable import DictatorApp
+@testable import DictatorAppMac
 @testable import DictatorCore
 
 final class OllamaBootstrapperTests: XCTestCase {

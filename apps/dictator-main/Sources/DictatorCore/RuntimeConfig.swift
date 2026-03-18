@@ -8,7 +8,11 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
     public static let defaultFallbackMode = "openai"
     public static let defaultSTTModelPath = "models/ggml-base.en.bin"
     public static let defaultSTTLanguage = "en"
+    #if os(Linux)
+    public static let defaultOllamaBinPath = "/usr/bin/ollama"
+    #else
     public static let defaultOllamaBinPath = "/opt/homebrew/bin/ollama"
+    #endif
     public static let defaultDataDir = "apps/dictator-main/Data"
     public static let defaultSystemPromptsDir = "prompts/system-prompts"
     public static let defaultDictatorServerHost = "0.0.0.0"
@@ -137,7 +141,7 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
         let resolvedOllamaHost = Self.normalizedNonEmpty(ollamaHost) ?? Self.defaultOllamaHost
         let resolvedSTTModelPath = Self.normalizedNonEmpty(sttModelPath) ?? Self.defaultSTTModelPath
         let resolvedSTTLanguage = Self.normalizedNonEmpty(sttLanguage) ?? Self.defaultSTTLanguage
-        let resolvedOllamaBinPath = Self.normalizedNonEmpty(ollamaBinPath) ?? Self.defaultOllamaBinPath
+        let resolvedOllamaBinPath = Self.resolvedOllamaBinPath(Self.normalizedNonEmpty(ollamaBinPath))
         let resolvedDataDir = Self.normalizedNonEmpty(dataDir) ?? Self.defaultDataDir
         let resolvedSystemPromptsDir = Self.normalizedNonEmpty(systemPromptsDir) ?? Self.defaultSystemPromptsDir
         let resolvedDictatorServerHost = Self.normalizedNonEmpty(dictatorServerHost) ?? Self.defaultDictatorServerHost
@@ -237,6 +241,16 @@ public struct RuntimeConfigFile: Codable, Sendable, Equatable {
             result.removeLast()
         }
         return result
+    }
+
+    private static func resolvedOllamaBinPath(_ configured: String?) -> String {
+        let fallback = configured ?? Self.defaultOllamaBinPath
+        #if os(Linux)
+        if fallback == "/opt/homebrew/bin/ollama" {
+            return Self.defaultOllamaBinPath
+        }
+        #endif
+        return fallback
     }
 
     private static func resolvePathURL(_ value: String, currentDirectoryPath: String, isDirectory: Bool) -> URL {

@@ -3,39 +3,63 @@ import Foundation
 import NIO
 import NIOHTTP1
 
-struct DictationHTTPSuccessRecord: Sendable {
-    let response: DictateResponse
-    let transcribeMs: Int
-    let refineMs: Int
-    let totalPipelineMs: Int
-    let optionalContext: [String: String]?
+public struct DictationHTTPSuccessRecord: Sendable {
+    public let response: DictateResponse
+    public let transcribeMs: Int
+    public let refineMs: Int
+    public let totalPipelineMs: Int
+    public let optionalContext: [String: String]?
+
+    public init(
+        response: DictateResponse,
+        transcribeMs: Int,
+        refineMs: Int,
+        totalPipelineMs: Int,
+        optionalContext: [String: String]?
+    ) {
+        self.response = response
+        self.transcribeMs = transcribeMs
+        self.refineMs = refineMs
+        self.totalPipelineMs = totalPipelineMs
+        self.optionalContext = optionalContext
+    }
 }
 
-struct DictationHTTPFailureRecord: Sendable {
-    let errorMessage: String
-    let optionalContext: [String: String]?
-    let audioData: Data
-    let sampleRate: Int
-    let locale: String
+public struct DictationHTTPFailureRecord: Sendable {
+    public let errorMessage: String
+    public let optionalContext: [String: String]?
+    public let audioData: Data
+    public let sampleRate: Int
+    public let locale: String
+
+    public init(errorMessage: String, optionalContext: [String: String]?, audioData: Data, sampleRate: Int, locale: String) {
+        self.errorMessage = errorMessage
+        self.optionalContext = optionalContext
+        self.audioData = audioData
+        self.sampleRate = sampleRate
+        self.locale = locale
+    }
 }
 
-final class DictationHTTPServer {
+public final class DictationHTTPServer {
     private let host: String
     private let port: Int
     private let maxBodyBytes: Int
     private let coreClient: any DictatorCoreClient
     private let onSuccessRecord: (@Sendable (DictationHTTPSuccessRecord) async -> Void)?
     private let onFailureRecord: (@Sendable (DictationHTTPFailureRecord) async -> Void)?
+    private let log: @Sendable (String) -> Void
     private let group: MultiThreadedEventLoopGroup
     private var channel: Channel?
 
-    init(
+    public init(
         host: String,
         port: Int,
         maxBodyBytes: Int = 25 * 1024 * 1024,
         coreClient: any DictatorCoreClient,
         onSuccessRecord: (@Sendable (DictationHTTPSuccessRecord) async -> Void)? = nil,
-        onFailureRecord: (@Sendable (DictationHTTPFailureRecord) async -> Void)? = nil
+        onFailureRecord: (@Sendable (DictationHTTPFailureRecord) async -> Void)? = nil,
+        log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.host = host
         self.port = port
@@ -43,10 +67,11 @@ final class DictationHTTPServer {
         self.coreClient = coreClient
         self.onSuccessRecord = onSuccessRecord
         self.onFailureRecord = onFailureRecord
+        self.log = log
         self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
 
-    func start() async throws {
+    public func start() async throws {
         guard channel == nil else {
             return
         }
@@ -54,14 +79,15 @@ final class DictationHTTPServer {
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .childChannelInitializer { [coreClient, maxBodyBytes, onSuccessRecord, onFailureRecord] channel in
+            .childChannelInitializer { [coreClient, maxBodyBytes, onSuccessRecord, onFailureRecord, log] channel in
                 channel.pipeline.configureHTTPServerPipeline().flatMap {
                     channel.pipeline.addHandler(
                         DictationHTTPHandler(
                             coreClient: coreClient,
                             maxBodyBytes: maxBodyBytes,
                             onSuccessRecord: onSuccessRecord,
-                            onFailureRecord: onFailureRecord
+                            onFailureRecord: onFailureRecord,
+                            log: log
                         )
                     )
                 }
@@ -71,14 +97,15 @@ final class DictationHTTPServer {
             .childChannelOption(ChannelOptions.recvAllocator, value: AdaptiveRecvByteBufferAllocator())
 
         channel = try await bootstrap.bind(host: host, port: port).get()
+        log("dictation server listening on \(bindDescription)")
     }
 
-    func stop() async {
+    public func stop() async {
         if let channel {
             do {
                 try await channel.close().get()
             } catch {
-                TraceLogger.log("dictation server close failed: \(error)")
+                log("dictation server close failed: \(error)")
             }
             self.channel = nil
         }
@@ -86,11 +113,11 @@ final class DictationHTTPServer {
         do {
             try await group.shutdownGracefully()
         } catch {
-            TraceLogger.log("dictation server shutdown failed: \(error)")
+            log("dictation server shutdown failed: \(error)")
         }
     }
 
-    var bindDescription: String {
+    public var bindDescription: String {
         "\(host):\(port)"
     }
 }
@@ -165,6 +192,7 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
     private let maxBodyBytes: Int
     private let onSuccessRecord: (@Sendable (DictationHTTPSuccessRecord) async -> Void)?
     private let onFailureRecord: (@Sendable (DictationHTTPFailureRecord) async -> Void)?
+    private let log: @Sendable (String) -> Void
     private let encoder = JSONEncoder()
     private var pendingRequest: PendingRequest?
     private var activeTask: Task<Void, Never>?
@@ -173,12 +201,14 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
         coreClient: any DictatorCoreClient,
         maxBodyBytes: Int,
         onSuccessRecord: (@Sendable (DictationHTTPSuccessRecord) async -> Void)?,
-        onFailureRecord: (@Sendable (DictationHTTPFailureRecord) async -> Void)?
+        onFailureRecord: (@Sendable (DictationHTTPFailureRecord) async -> Void)?,
+        log: @escaping @Sendable (String) -> Void
     ) {
         self.coreClient = coreClient
         self.maxBodyBytes = maxBodyBytes
         self.onSuccessRecord = onSuccessRecord
         self.onFailureRecord = onFailureRecord
+        self.log = log
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -189,7 +219,7 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
             let contentLength = head.headers.first(name: "Content-Length") ?? "n/a"
             let transferEncoding = head.headers.first(name: "Transfer-Encoding") ?? "n/a"
             let requestID = head.headers.first(name: "X-Request-Id") ?? "missing"
-            TraceLogger.log("dictation HTTP request head: id=\(requestID) \(head.method.rawValue) \(head.uri) remote=\(remote) contentLength=\(contentLength) transferEncoding=\(transferEncoding)")
+            log("dictation HTTP request head: id=\(requestID) \(head.method.rawValue) \(head.uri) remote=\(remote) contentLength=\(contentLength) transferEncoding=\(transferEncoding)")
             pendingRequest = PendingRequest(head: head)
         case var .body(buffer):
             guard var pending = pendingRequest, !pending.responseSent else {
@@ -216,12 +246,12 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
     func channelInactive(context: ChannelHandlerContext) {
         activeTask?.cancel()
         activeTask = nil
-        TraceLogger.log("dictation server channel inactive")
+        log("dictation server channel inactive")
         context.fireChannelInactive()
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
-        TraceLogger.log("dictation server channel error: \(error)")
+        log("dictation server channel error: \(error)")
         context.close(promise: nil)
     }
 
@@ -230,7 +260,7 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
         let requestStart = Date()
         do {
             if pending.head.uri == "/health", pending.head.method == .GET {
-                TraceLogger.log("[\(requestID)] health check request")
+                log("[\(requestID)] health check request")
                 writeJSONResponse(
                     ["status": "ok"],
                     status: .ok,
@@ -247,7 +277,7 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
                 throw RequestError.methodNotAllowed
             }
 
-            TraceLogger.log("[\(requestID)] /v1/dictate-audio accepted (bytes=\(pending.body.readableBytes))")
+            log("[\(requestID)] /v1/dictate-audio accepted (bytes=\(pending.body.readableBytes))")
 
             let contentType = pending.head.headers.first(name: "Content-Type")?.lowercased() ?? ""
             guard contentType.hasPrefix("audio/wav") || contentType.hasPrefix("audio/x-wav") else {
@@ -258,144 +288,117 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
                   let sampleRate = Int(sampleRateHeader), sampleRate > 0 else {
                 throw RequestError.badRequest("X-Sample-Rate must be a positive integer.")
             }
-            guard let locale = pending.head.headers.first(name: "X-Locale"),
-                  !locale.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw RequestError.badRequest("X-Locale is required.")
+
+            let locale = pending.head.headers.first(name: "X-Locale")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedLocale = locale?.isEmpty == false ? locale! : "en-US"
+
+            let sessionIDHeader = pending.head.headers.first(name: "X-Session-Id")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let sessionID = sessionIDHeader?.isEmpty == false ? sessionIDHeader! : UUID().uuidString
+
+            let optionalContextHeader = pending.head.headers.first(name: "X-Optional-Context")
+            let optionalContext = decodeOptionalContext(optionalContextHeader)
+
+            let audioBytes = pending.body.getBytes(at: pending.body.readerIndex, length: pending.body.readableBytes) ?? []
+            let audioData = Data(audioBytes)
+            guard !audioData.isEmpty else {
+                throw RequestError.badRequest("Request body must contain WAV audio bytes.")
             }
-            guard let sessionID = pending.head.headers.first(name: "X-Session-Id"),
-                  !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw RequestError.badRequest("X-Session-Id is required.")
-            }
 
-            var body = pending.body
-            let wavBytes = body.readBytes(length: body.readableBytes) ?? []
-            let wavData = Data(wavBytes)
-            guard Self.looksLikeWAV(wavData) else {
-                throw RequestError.unprocessableEntity("Payload must be a valid WAV stream.")
-            }
-
-            let optionalContext = try parseStringMapHeader(
-                pending.head.headers.first(name: "X-Context-Json"),
-                headerName: "X-Context-Json"
-            )
-            let stylePrefs = try parseStringMapHeader(
-                pending.head.headers.first(name: "X-Style-Prefs-Json"),
-                headerName: "X-Style-Prefs-Json"
-            )
-
-            let request = DictateRequest(
-                audio_b64: wavData.base64EncodedString(),
-                sample_rate: sampleRate,
-                locale: locale,
-                session_id: sessionID,
-                optional_context: optionalContext,
-                style_prefs: stylePrefs
-            )
-
-            activeTask = Task { [weak self, weak context] in
-                guard let self, let context else { return }
+            activeTask?.cancel()
+            activeTask = Task {
                 do {
-                    TraceLogger.log("[\(requestID)] coreClient.dictate started")
-                    let result = try await self.coreClient.dictate(request)
-                    if Task.isCancelled {
-                        TraceLogger.log("[\(requestID)] coreClient.dictate cancelled")
-                        return
-                    }
-                    let response = DictateAudioResponse(
-                        raw_transcript: result.response.raw_transcript,
-                        revised_text: result.response.revised_text,
-                        edit_summary: result.response.edit_summary,
-                        uncertainty_flags: result.response.uncertainty_flags,
-                        transcribe_ms: result.transcribeMs,
-                        refine_ms: result.refineMs
-                    )
-                    let elapsed = Date().timeIntervalSince(requestStart)
-                    TraceLogger.log("[\(requestID)] coreClient.dictate succeeded in \(String(format: "%.3f", elapsed))s (transcribe_ms=\(result.transcribeMs), refine_ms=\(result.refineMs))")
-                    if let onSuccessRecord {
-                        let persisted = DictationHTTPSuccessRecord(
-                            response: result.response,
-                            transcribeMs: result.transcribeMs,
-                            refineMs: result.refineMs,
-                            totalPipelineMs: Int(elapsed * 1000),
-                            optionalContext: optionalContext
+                    let dictated = try await coreClient.dictate(
+                        DictateRequest(
+                            audio_b64: audioData.base64EncodedString(),
+                            sample_rate: sampleRate,
+                            locale: resolvedLocale,
+                            session_id: sessionID,
+                            optional_context: optionalContext
                         )
-                        Task {
-                            await onSuccessRecord(persisted)
-                        }
+                    )
+
+                    let payload = DictateAudioResponse(
+                        raw_transcript: dictated.response.raw_transcript,
+                        revised_text: dictated.response.revised_text,
+                        edit_summary: dictated.response.edit_summary,
+                        uncertainty_flags: dictated.response.uncertainty_flags,
+                        transcribe_ms: dictated.transcribeMs,
+                        refine_ms: dictated.refineMs
+                    )
+
+                    let totalPipelineMs = Int(Date().timeIntervalSince(requestStart) * 1000)
+                    if let onSuccessRecord {
+                        await onSuccessRecord(
+                            DictationHTTPSuccessRecord(
+                                response: dictated.response,
+                                transcribeMs: dictated.transcribeMs,
+                                refineMs: dictated.refineMs,
+                                totalPipelineMs: totalPipelineMs,
+                                optionalContext: optionalContext
+                            )
+                        )
                     }
+
                     context.eventLoop.execute {
                         self.writeJSONResponse(
-                            response,
+                            payload,
                             status: .ok,
                             context: context,
                             closeAfterResponse: !pending.head.isKeepAlive
                         )
                     }
                 } catch {
-                    let elapsed = Date().timeIntervalSince(requestStart)
-                    TraceLogger.log("[\(requestID)] coreClient.dictate failed after \(String(format: "%.3f", elapsed))s: \(error)")
+                    let message = String(describing: error)
                     if let onFailureRecord {
-                        let persisted = DictationHTTPFailureRecord(
-                            errorMessage: error.localizedDescription,
-                            optionalContext: optionalContext,
-                            audioData: wavData,
-                            sampleRate: sampleRate,
-                            locale: locale
+                        await onFailureRecord(
+                            DictationHTTPFailureRecord(
+                                errorMessage: message,
+                                optionalContext: optionalContext,
+                                audioData: audioData,
+                                sampleRate: sampleRate,
+                                locale: resolvedLocale
+                            )
                         )
-                        Task {
-                            await onFailureRecord(persisted)
-                        }
                     }
                     context.eventLoop.execute {
-                        self.writeErrorResponse(
-                            .internalServerError("Dictation failed: \(error.localizedDescription)"),
-                            context: context,
-                            closeAfterResponse: !pending.head.isKeepAlive
-                        )
+                        self.writeErrorResponse(.unprocessableEntity(message), context: context, closeAfterResponse: !pending.head.isKeepAlive)
                     }
                 }
             }
         } catch let requestError as RequestError {
-            TraceLogger.log("[\(requestID)] request rejected: \(requestError.status.code) \(requestError.message)")
-            writeErrorResponse(
-                requestError,
-                context: context,
-                closeAfterResponse: !pending.head.isKeepAlive
-            )
+            writeErrorResponse(requestError, context: context, closeAfterResponse: !pending.head.isKeepAlive)
         } catch {
-            TraceLogger.log("[\(requestID)] request parsing failed: \(error)")
-            writeErrorResponse(
-                .badRequest("Invalid request: \(error.localizedDescription)"),
-                context: context,
-                closeAfterResponse: !pending.head.isKeepAlive
-            )
+            writeErrorResponse(.internalServerError(String(describing: error)), context: context, closeAfterResponse: !pending.head.isKeepAlive)
         }
     }
 
-    private func parseStringMapHeader(_ value: String?, headerName: String) throws -> [String: String]? {
-        guard let value else {
-            return nil
-        }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+    private func decodeOptionalContext(_ headerValue: String?) -> [String: String]? {
+        guard let headerValue,
+              let data = Data(base64Encoded: headerValue),
+              !data.isEmpty else {
             return nil
         }
 
-        let data = Data(trimmed.utf8)
-        let decoded = try JSONSerialization.jsonObject(with: data)
-        guard let object = decoded as? [String: Any] else {
-            throw RequestError.badRequest("\(headerName) must be a JSON object.")
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
         }
 
-        var mapped: [String: String] = [:]
-        for (key, raw) in object {
-            mapped[key] = String(describing: raw)
+        var result: [String: String] = [:]
+        for (key, value) in object {
+            if let stringValue = value as? String {
+                result[key] = stringValue
+            }
         }
-        return mapped
+        return result.isEmpty ? nil : result
     }
 
     private func writeErrorResponse(_ error: RequestError, context: ChannelHandlerContext, closeAfterResponse: Bool) {
-        writeJSONResponse(ErrorResponse(error: error.message), status: error.status, context: context, closeAfterResponse: closeAfterResponse)
+        writeJSONResponse(
+            ErrorResponse(error: error.message),
+            status: error.status,
+            context: context,
+            closeAfterResponse: closeAfterResponse
+        )
     }
 
     private func writeJSONResponse<T: Encodable>(
@@ -411,30 +414,27 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
 
             var headers = HTTPHeaders()
             headers.add(name: "Content-Type", value: "application/json")
-            headers.add(name: "Content-Length", value: "\(data.count)")
-            headers.add(name: "Connection", value: closeAfterResponse ? "close" : "keep-alive")
+            headers.add(name: "Content-Length", value: String(data.count))
+            if !closeAfterResponse {
+                headers.add(name: "Connection", value: "keep-alive")
+            }
 
             let head = HTTPResponseHead(version: .http1_1, status: status, headers: headers)
             context.write(wrapOutboundOut(.head(head)), promise: nil)
             context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
             context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in
-                TraceLogger.log(
-                    "dictation HTTP response sent status=\(status.code) bytes=\(data.count) connection=\(closeAfterResponse ? "close" : "keep-alive")"
-                )
                 if closeAfterResponse {
                     context.close(promise: nil)
                 }
             }
         } catch {
-            let fallback = """
-            {"error":"Failed to encode response."}
-            """
+            let fallback = #"{"error":"failed to encode response"}"#
             var buffer = context.channel.allocator.buffer(capacity: fallback.utf8.count)
             buffer.writeString(fallback)
-            var headers = HTTPHeaders()
-            headers.add(name: "Content-Type", value: "application/json")
-            headers.add(name: "Content-Length", value: "\(fallback.utf8.count)")
-            headers.add(name: "Connection", value: closeAfterResponse ? "close" : "keep-alive")
+            let headers = HTTPHeaders([
+                ("Content-Type", "application/json"),
+                ("Content-Length", String(fallback.utf8.count))
+            ])
             let head = HTTPResponseHead(version: .http1_1, status: .internalServerError, headers: headers)
             context.write(wrapOutboundOut(.head(head)), promise: nil)
             context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
@@ -444,13 +444,5 @@ private final class DictationHTTPHandler: ChannelInboundHandler {
                 }
             }
         }
-    }
-
-    private static func looksLikeWAV(_ data: Data) -> Bool {
-        guard data.count >= 44 else {
-            return false
-        }
-        return data.starts(with: [0x52, 0x49, 0x46, 0x46]) // RIFF
-            && data[8...11].elementsEqual([0x57, 0x41, 0x56, 0x45]) // WAVE
     }
 }

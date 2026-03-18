@@ -28,6 +28,8 @@ Swift menubar scaffold for Dictator.
 - Insertion path uses clipboard + synthetic `Cmd+V` and restores prior clipboard contents
 - Menubar status line reports explicit failures (permission missing, STT/refinement failure, insertion failure, missing API key)
 - OpenAI key can be managed from menubar menu for the current session (in-memory only)
+- Linux daemon mode `dictator-linux` supports CLI-driven record toggle/start/stop/cancel/status over a Unix socket
+- Linux insertion path uses Wayland clipboard + synthetic paste (`wl-copy`/`wl-paste` + `wtype`)
 
 ## Compatibility
 
@@ -66,6 +68,23 @@ Swift menubar scaffold for Dictator.
    - `/opt/homebrew/bin/ollama run qwen2.5:7b-instruct "hello"`
 
 Privacy note: when `fallback_mode` is `openai` and a valid OpenAI key is configured, transcripts may be sent to OpenAI if local refinement fails.
+
+## Linux daemon CLI
+
+- Build: `swift build --product dictator-linux`
+- Start daemon: `swift run dictator-linux daemon`
+- Control commands:
+  - `swift run dictator-linux toggle`
+  - `swift run dictator-linux start`
+  - `swift run dictator-linux stop`
+  - `swift run dictator-linux cancel`
+  - `swift run dictator-linux status`
+  - `swift run dictator-linux health`
+
+Linux runtime dependencies (Arch baseline):
+- `pw-record` (PipeWire capture)
+- `wl-copy` / `wl-paste` (clipboard)
+- `wtype` (paste key simulation)
 
 ## Safe restore behavior
 

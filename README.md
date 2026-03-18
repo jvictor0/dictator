@@ -26,6 +26,23 @@ Dictator is a unified Swift dictation codebase with platform wrappers for macOS 
    - `swift build`
    - `swift test`
 
+## Linux quick start (Wayland/wlroots baseline)
+
+1. Install dependencies on Arch Linux:
+   - `sudo pacman -S swift pipewire wireplumber wl-clipboard wtype ollama`
+   - Install whisper runtime/libs (`whisper.cpp`) and ensure `whisper.h` + linkable `libwhisper`/`libggml*` are available.
+2. Build Linux CLI/daemon:
+   - `cd apps/dictator-main`
+   - `swift build --product dictator-linux`
+3. Start daemon:
+   - `swift run dictator-linux daemon`
+4. Control dictation:
+   - `swift run dictator-linux toggle`
+   - `swift run dictator-linux status`
+5. Example compositor bindings:
+   - Sway: `bindsym Caps_Lock exec '/path/to/dictator-linux toggle'`
+   - Hyprland: `bind = , Caps_Lock, exec, /path/to/dictator-linux toggle`
+
 ## Compatibility
 
 - There are no stable installs for this project.

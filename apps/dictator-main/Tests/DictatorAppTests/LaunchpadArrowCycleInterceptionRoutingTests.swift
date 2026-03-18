@@ -1,5 +1,5 @@
 import XCTest
-@testable import DictatorApp
+@testable import DictatorAppMac
 
 final class LaunchpadArrowCycleInterceptionRoutingTests: XCTestCase {
     func testRoutesOnlyEventTapWhenEventTapPathIsActive() {
